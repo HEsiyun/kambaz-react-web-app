@@ -7,7 +7,10 @@ export default function Labs() {
   return (
     <div id="wd-labs">
       <h1>Labs</h1>
+      <p>Student Name: Siyun He</p>
+      <p>Section: CS5610 60924 Web Development SEC 01 Summer 2 2025</p>
       <a
+        id="wd-github"
         href="https://github.com/HEsiyun/kambaz-react-web-app/tree/a1"
         target="_blank"
         rel="noopener noreferrer"

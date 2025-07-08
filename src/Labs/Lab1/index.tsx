@@ -2,8 +2,6 @@ export default function Lab1() {
     return (
       <div id="wd-lab1">
         <h2>Lab 1</h2>
-        Student Name: Siyun He <br />
-        Section: CS5610 60924 Web Development SEC 01 <br />
         <h3>HTML Examples</h3>
         <div id="wd-h-tag">
           <h4>Heading Tags</h4>
