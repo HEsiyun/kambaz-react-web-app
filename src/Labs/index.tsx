@@ -7,6 +7,13 @@ export default function Labs() {
   return (
     <div id="wd-labs">
       <h1>Labs</h1>
+      <a
+        href="https://github.com/HEsiyun/kambaz-react-web-app/tree/a1"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Source Code Repository
+      </a>
       <TOC /> 
       <Routes> 
         <Route path="/" element={<Navigate to="Lab1" />} /> 
