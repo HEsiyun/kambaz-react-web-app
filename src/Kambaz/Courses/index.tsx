@@ -3,16 +3,21 @@ import Modules from "./Modules";
 import Home from "./Home";
 import Assignments from "./Assignments";
 import AssignmentEditor from "./Assignments/Editor";
-import { Navigate, Route, Routes } from "react-router";
-import { FaAlignJustify } from "react-icons/fa"; 
 import PeopleTable from "./People/Table";
+import { Navigate, Route, Routes, useParams, useLocation } from "react-router";
+import { FaAlignJustify } from "react-icons/fa";
+import { courses } from "../Database";   // Import courses
 
 export default function Courses() {
+  const { cid } = useParams();                      // Get course ID from URL
+  const course = courses.find((course) => course._id === cid); // Find the course
+  const { pathname } = useLocation();
+
   return (
     <div id="wd-courses">
       <h2 className="text-danger">
         <FaAlignJustify className="me-4 fs-4 mb-1" />
-        Course 1234
+        {course && course.name} &gt; {pathname.split("/")[4]}                       {/* Show course name */}
       </h2>
       <hr />
       <div className="d-flex">

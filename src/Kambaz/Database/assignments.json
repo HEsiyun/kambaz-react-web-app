@@ -1,0 +1,83 @@
+[
+  {
+    "_id": "A101",
+    "title": "Propulsion Assignment",
+    "course": "RS101",
+    "description": "Analyze and simulate the propulsion system for a model rocket. Include calculations for thrust, fuel consumption, and trajectory.",
+    "points": 100,
+    "dueDate": "2024-09-13T23:59",
+    "availableDate": "2024-09-06"
+  },
+  {
+    "_id": "A102",
+    "title": "Combustion Analysis",
+    "course": "RS101",
+    "description": "Complete a combustion analysis for the specified propellant and discuss the efficiency and byproducts.",
+    "points": 100,
+    "dueDate": "2024-09-20T23:59",
+    "availableDate": "2024-09-13"
+  },
+  {
+    "_id": "A103",
+    "title": "Nozzle Design Project",
+    "course": "RS101",
+    "description": "Design a rocket nozzle and justify your choices based on fluid dynamics and material considerations.",
+    "points": 100,
+    "dueDate": "2024-09-27T23:59",
+    "availableDate": "2024-09-20"
+  },
+  {
+    "_id": "A201",
+    "title": "Aerodynamics Quiz",
+    "course": "RS102",
+    "description": "Quiz on fundamental concepts of aerodynamics, including lift, drag, and airflow.",
+    "points": 100,
+    "dueDate": "2024-09-15T23:59",
+    "availableDate": "2024-09-08"
+  },
+  {
+    "_id": "A202",
+    "title": "Flow Analysis",
+    "course": "RS102",
+    "description": "Analyze the flow over a wing section using computational methods.",
+    "points": 100,
+    "dueDate": "2024-09-22T23:59",
+    "availableDate": "2024-09-15"
+  },
+  {
+    "_id": "A203",
+    "title": "Heating Analysis",
+    "course": "RS102",
+    "description": "Calculate the heating experienced by a spacecraft during atmospheric reentry.",
+    "points": 100,
+    "dueDate": "2024-09-29T23:59",
+    "availableDate": "2024-09-22"
+  },
+  {
+    "_id": "A301",
+    "title": "Structural Design Task",
+    "course": "RS103",
+    "description": "Design the main load-bearing structure for a small satellite.",
+    "points": 100,
+    "dueDate": "2024-09-18T23:59",
+    "availableDate": "2024-09-11"
+  },
+  {
+    "_id": "A302",
+    "title": "Orbital Calculations",
+    "course": "RS103",
+    "description": "Perform orbital calculations for a satellite transfer maneuver.",
+    "points": 100,
+    "dueDate": "2024-09-25T23:59",
+    "availableDate": "2024-09-18"
+  },
+  {
+    "_id": "A303",
+    "title": "Systems Engineering Exam",
+    "course": "RS103",
+    "description": "Midterm exam covering the fundamentals of systems engineering.",
+    "points": 100,
+    "dueDate": "2024-10-02T23:59",
+    "availableDate": "2024-09-25"
+  }
+]
