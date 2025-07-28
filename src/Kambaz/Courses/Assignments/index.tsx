@@ -5,7 +5,7 @@ import { GoSearch } from "react-icons/go";
 import { MdOutlineAssignment } from "react-icons/md";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
-import { useState, type JSXElementConstructor, type ReactElement, type ReactNode, type ReactPortal } from "react";
+import { useState } from "react";
 import { deleteAssignment } from "./reducer"; // adjust import path if needed
 
 function formatDate(dateStr: string | number | Date) {
@@ -26,14 +26,27 @@ export default function Assignments() {
   const dispatch = useDispatch();
 
   // Get assignments from Redux store
-  const assignments = useSelector((state: any) => state.assignmentsReducer.assignments);
-  const filtered = assignments.filter((a: { course: string | undefined; }) => a.course === cid);
+  // Define RootState type if not already defined elsewhere
+  interface RootState {
+    assignmentsReducer: {
+      assignments: any[];
+    };
+    accountReducer: {
+      currentUser: { role?: string } | null;
+    };
+  }
+
+  const assignments = useSelector((state: RootState) => state.assignmentsReducer.assignments);
+  const currentUser = useSelector((state: RootState) => state.accountReducer.currentUser);
+  const isFaculty = currentUser?.role === "FACULTY";
+
+  const filtered = assignments.filter((a) => a.course === cid);
 
   // For delete confirmation dialog
   const [showModal, setShowModal] = useState(false);
-  const [assignmentToDelete, setAssignmentToDelete] = useState<string | null>(null);
+  const [assignmentToDelete, setAssignmentToDelete] = useState(null);
 
-  const handleDelete = (aid: string | null) => {
+  const handleDelete = (aid: null) => {
     if (aid) {
       dispatch(deleteAssignment(aid));
     }
@@ -54,14 +67,16 @@ export default function Assignments() {
           <Button variant="secondary" size="sm" className="me-2" id="wd-add-assignment-group">
             <FaPlus className="me-2" /> Group
           </Button>
-          <Button
-            variant="danger"
-            size="sm"
-            id="wd-add-assignment"
-            onClick={() => navigate(`/Kambaz/Courses/${cid}/Assignments/new`)}
-          >
-            <FaPlus className="me-2" /> Assignment
-          </Button>
+          {isFaculty && (
+            <Button
+              variant="danger"
+              size="sm"
+              id="wd-add-assignment"
+              onClick={() => navigate(`/Kambaz/Courses/${cid}/Assignments/new`)}
+            >
+              <FaPlus className="me-2" /> Assignment
+            </Button>
+          )}
         </div>
       </div>
 
@@ -83,10 +98,10 @@ export default function Assignments() {
 
       {/* Assignments List */}
       <ul className="list-group">
-        {filtered.map((a: { _id: string | number | bigint | ((prevState: string | null) => string | null) | null | undefined; title: string | number | bigint | boolean | ReactElement<unknown, string | JSXElementConstructor<any>> | Iterable<ReactNode> | ReactPortal | Promise<string | number | bigint | boolean | ReactPortal | ReactElement<unknown, string | JSXElementConstructor<any>> | Iterable<ReactNode> | null | undefined> | null | undefined; dueDate: string | number | Date; points: string | number | bigint | boolean | ReactElement<unknown, string | JSXElementConstructor<any>> | Iterable<ReactNode> | ReactPortal | Promise<string | number | bigint | boolean | ReactPortal | ReactElement<unknown, string | JSXElementConstructor<any>> | Iterable<ReactNode> | null | undefined> | null | undefined; }) => (
+        {filtered.map((a) => (
           <li
             className="list-group-item d-flex align-items-start border-0 border-start border-success border-4 mb-2"
-            key={typeof a._id === "string" || typeof a._id === "number" ? a._id : String(a._id)}
+            key={a._id}
           >
             <BsGripVertical className="me-2 mt-1 text-secondary fs-5" />
             <MdOutlineAssignment className="me-2 mt-1 text-success fs-5" />
@@ -101,20 +116,20 @@ export default function Assignments() {
                 <b>Due</b> {a.dueDate ? formatDate(a.dueDate) : ""} | {a.points} pts
               </div>
             </div>
-            {/* Delete icon */}
+            {/* Delete icon: Only show for faculty */}
             <div className="ms-2 d-flex align-items-center">
-              <Button
-                variant="link"
-                className="p-0 text-danger"
-                onClick={() => {
-                  setAssignmentToDelete(
-                    a._id !== undefined && a._id !== null ? String(a._id) : null
-                  );
-                  setShowModal(true);
-                }}
-              >
-                <FaTrash />
-              </Button>
+              {isFaculty && (
+                <Button
+                  variant="link"
+                  className="p-0 text-danger"
+                  onClick={() => {
+                    setAssignmentToDelete(a._id);
+                    setShowModal(true);
+                  }}
+                >
+                  <FaTrash />
+                </Button>
+              )}
               <FaCheckCircle className="text-success fs-4 ms-2" />
               <BsThreeDotsVertical className="fs-5 ms-2" />
             </div>
