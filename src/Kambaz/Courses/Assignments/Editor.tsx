@@ -1,220 +1,160 @@
-import { Container, Form, Row, Col, InputGroup } from "react-bootstrap";
-import { BsCalendar3, BsX } from "react-icons/bs";
-import { useParams, Link } from "react-router-dom";
-import * as db from "../../Database";
+import { useState, useEffect } from "react";
+import { Container, Form, Row, Col, InputGroup, Button } from "react-bootstrap";
+import { BsCalendar3 } from "react-icons/bs";
+import { useParams, useNavigate } from "react-router-dom";
+import { useSelector, useDispatch } from "react-redux";
+import { addAssignment, updateAssignment } from "./reducer"; // adjust path
 
 export default function AssignmentEditor() {
   const { cid, aid } = useParams();
-  const assignment = db.assignments.find(a => a.course === cid && a._id === aid);
+  const navigate = useNavigate();
+  const dispatch = useDispatch();
 
-  if (!assignment) return <div>Assignment not found</div>;
+  // Get assignments from Redux store
+  const assignments = useSelector((state: any) => state.assignmentsReducer.assignments);
+
+  // If editing, find assignment
+  const editing = aid && aid !== "new";
+  const assignment = assignments.find((a: any) => a._id === aid);
+
+  // Local state for controlled form
+  const [title, setTitle] = useState("New Assignment");
+  const [description, setDescription] = useState("New Assignment Description");
+  const [points, setPoints] = useState(100);
+  const [dueDate, setDueDate] = useState("");
+  const [availableFrom, setAvailableFrom] = useState("");
+  const [availableUntil, setAvailableUntil] = useState("");
+
+  // Populate for edit
+  useEffect(() => {
+    if (editing && assignment) {
+      setTitle(assignment.title || "");
+      setDescription(assignment.description || "");
+      setPoints(assignment.points ?? 100);
+      setDueDate(assignment.dueDate || "");
+      setAvailableFrom(assignment.availableDate || "");
+      setAvailableUntil(assignment.untilDate || "");
+    }
+  }, [editing, assignment]);
+
+  // Save: update or create, then navigate
+  const handleSave = () => {
+    if (editing) {
+      dispatch(
+        updateAssignment({
+          ...assignment,
+          title,
+          description,
+          points,
+          dueDate,
+          availableDate: availableFrom,
+          untilDate: availableUntil,
+        })
+      );
+    } else {
+      dispatch(
+        addAssignment({
+          title,
+          description,
+          points,
+          dueDate,
+          availableDate: availableFrom,
+          untilDate: availableUntil,
+          course: cid ?? "",
+        })
+      );
+    }
+    navigate(`/Kambaz/Courses/${cid}/Assignments`);
+  };
+
+  // Cancel: go back, no change
+  const handleCancel = () => {
+    navigate(`/Kambaz/Courses/${cid}/Assignments`);
+  };
 
   return (
-    <Container className="mt-4">
-      <h4>Assignment Name</h4>
-      <Form.Control
-        type="text"
-        className="mb-3"
-        value={assignment.title}
-        readOnly
-      />
-
-      {/* Description */}
-      <Form.Group className="mb-3">
-      <Form.Label>Description</Form.Label>
-      <div className="mb-3 p-3 bg-white rounded border">
-        {/* Assignment description from JSON */}
-        <div className="mb-3">{assignment.description}</div>
-
-        {/* Formatted instructions */}
-        <div>
-          The assignment is{" "}
-          <span style={{ color: "red" }}>available online</span>
-        </div>
-        <div className="mt-3">
-          Submit a link to the landing page of your Web application running on{" "}
-          <a href="https://netlify.com" target="_blank" rel="noopener noreferrer">
-            Netlify
-          </a>
-          .
-        </div>
-        <div className="mt-3">
-          The landing page should include the following:
-          <ul>
-            <li>Your full name and section</li>
-            <li>Links to each of the lab assignments</li>
-            <li>Link to the Kanbas application</li>
-            <li>Links to all relevant source code repositories</li>
-          </ul>
-          The Kanbas application should include a link to navigate back to the landing page.
-        </div>
-      </div>
-    </Form.Group>
-
-      {/* Points */}
-      <Row className="mb-3">
-        <Col sm={2}>
-          <Form.Label>Points</Form.Label>
-        </Col>
-        <Col sm={4}>
-          <Form.Control type="number" value={assignment.points} readOnly />
-        </Col>
-      </Row>
-
-      {/* Assignment Group */}
-      <Row className="mb-3">
-        <Col sm={2}>
-          <Form.Label>Assignment Group</Form.Label>
-        </Col>
-        <Col sm={4}>
-          <Form.Select>
-            <option>ASSIGNMENTS</option>
-            <option>Other</option>
-          </Form.Select>
-        </Col>
-      </Row>
-
-      {/* Display Grade as */}
-      <Row className="mb-3">
-        <Col sm={2}>
-          <Form.Label>Display Grade as</Form.Label>
-        </Col>
-        <Col sm={4}>
-          <Form.Select>
-            <option>Percentage</option>
-            <option>Number</option>
-          </Form.Select>
-        </Col>
-      </Row>
-
-      {/* Submission Type */}
-      <Row className="mb-3 align-items-start">
-        <Col sm={2}>
-          <Form.Label>Submission Type</Form.Label>
-        </Col>
-        <Col sm={6}>
-          <div className="border rounded p-3">
-            <Form.Select className="mb-3">
-              <option>Online</option>
-              <option>On Paper</option>
-            </Form.Select>
-            <div className="fw-bold mb-2">Online Entry Options</div>
-            <Form.Check
-              type="checkbox"
-              id="text-entry"
-              label="Text Entry"
-              className="mb-2"
-            />
-            <Form.Check
-              type="checkbox"
-              id="website-url"
-              label="Website URL"
-              className="mb-2"
-              defaultChecked
-            />
-            <Form.Check
-              type="checkbox"
-              id="media-recordings"
-              label="Media Recordings"
-              className="mb-2"
-            />
-            <Form.Check
-              type="checkbox"
-              id="student-annotation"
-              label="Student Annotation"
-              className="mb-2"
-            />
-            <Form.Check
-              type="checkbox"
-              id="file-uploads"
-              label="File Uploads"
-            />
-          </div>
-        </Col>
-      </Row>
-
-      {/* Assign */}
-      <Row className="mb-4">
-  <Col sm={2}>
-    <Form.Label className="pt-2">Assign</Form.Label>
-  </Col>
-  <Col sm={8}>
-    <div className="border rounded p-3 bg-white">
-      <div className="fw-bold mb-1">Assign to</div>
-      <div className="mb-3">
-        <span className="badge bg-light text-dark border rounded-pill pe-3 ps-3 d-inline-flex align-items-center"
-              style={{ fontSize: "1rem" }}>
-          Everyone
-          <BsX className="ms-2 pointer-events-none" />
-        </span>
-      </div>
-      {/* DUE */}
-      <div className="fw-bold mb-1">
-        <Form.Label className="fw-bold mb-1">Due</Form.Label>
-      </div>
-      <InputGroup className="mb-3">
-        <Form.Control
-          type="datetime-local"
-          id="wd-due-date"
-          value={assignment.dueDate}
-          readOnly
-        />
-        <InputGroup.Text><BsCalendar3 /></InputGroup.Text>
-      </InputGroup>
-      {/* AVAILABLE FROM & UNTIL */}
-      <Row>
-        <Col>
-          <div className="fw-bold mb-1">
-            <Form.Label className="fw-bold mb-1">Available from</Form.Label>
-          </div>
-          <InputGroup className="mb-3">
+    <Container className="mt-4" style={{ maxWidth: 800 }}>
+      <Form>
+        <Form.Group className="mb-3">
+          <Form.Label>Assignment Name</Form.Label>
+          <Form.Control
+            type="text"
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            id="wd-assignment-title"
+          />
+        </Form.Group>
+        <Form.Group className="mb-3">
+          <Form.Label>Description</Form.Label>
+          <Form.Control
+            as="textarea"
+            rows={3}
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            id="wd-assignment-description"
+          />
+        </Form.Group>
+        <Form.Group as={Row} className="mb-3">
+          <Form.Label column sm={2}>Points</Form.Label>
+          <Col sm={4}>
             <Form.Control
-              type="datetime-local"
-              id="wd-available-from"
-              value={
-                assignment.availableDate
-                  ? (assignment.availableDate.length === 10
-                      ? assignment.availableDate + "T00:00"
-                      : assignment.availableDate)
-                  : ""
-              }
-              readOnly
+              type="number"
+              value={points}
+              onChange={e => setPoints(Number(e.target.value))}
+              id="wd-assignment-points"
             />
-            <InputGroup.Text><BsCalendar3 /></InputGroup.Text>
-          </InputGroup>
-        </Col>
-        <Col>
-          <div className="fw-bold mb-1">
-            <Form.Label className="fw-bold mb-1">Until</Form.Label>
+          </Col>
+        </Form.Group>
+        <Form.Group className="mb-3">
+          <Form.Label>Assign</Form.Label>
+          <div className="border rounded p-3 bg-white">
+            <div className="fw-bold mb-1">Due</div>
+            <InputGroup className="mb-3">
+              <Form.Control
+                type="date"
+                value={dueDate}
+                onChange={e => setDueDate(e.target.value)}
+                id="wd-due-date"
+              />
+              <InputGroup.Text><BsCalendar3 /></InputGroup.Text>
+            </InputGroup>
+            <Row>
+              <Col>
+                <div className="fw-bold mb-1">Available from</div>
+                <InputGroup className="mb-3">
+                  <Form.Control
+                    type="date"
+                    value={availableFrom}
+                    onChange={e => setAvailableFrom(e.target.value)}
+                    id="wd-available-from"
+                  />
+                  <InputGroup.Text><BsCalendar3 /></InputGroup.Text>
+                </InputGroup>
+              </Col>
+              <Col>
+                <div className="fw-bold mb-1">Until</div>
+                <InputGroup className="mb-3">
+                  <Form.Control
+                    type="date"
+                    value={availableUntil}
+                    onChange={e => setAvailableUntil(e.target.value)}
+                    id="wd-available-until"
+                  />
+                  <InputGroup.Text><BsCalendar3 /></InputGroup.Text>
+                </InputGroup>
+              </Col>
+            </Row>
           </div>
-          <InputGroup className="mb-3">
-            <Form.Control
-              type="datetime-local"
-              id="wd-available-until"
-            />
-            <InputGroup.Text><BsCalendar3 /></InputGroup.Text>
-          </InputGroup>
-        </Col>
-      </Row>
-    </div>
-  </Col>
-</Row>
-
-      {/* Cancel and Save buttons */}
-      <div className="d-flex justify-content-end gap-2 mb-4">
-        <Link
-          to={`/Kambaz/Courses/${cid}/Assignments`}
-          className="btn btn-light border"
-        >
-          Cancel
-        </Link>
-        <Link
-          to={`/Kambaz/Courses/${cid}/Assignments`}
-          className="btn btn-danger"
-        >
-          Save
-        </Link>
-      </div>
+        </Form.Group>
+        <div className="d-flex justify-content-end gap-2 mb-4">
+          <Button variant="light" className="border" onClick={handleCancel} id="wd-cancel-btn">
+            Cancel
+          </Button>
+          <Button variant="danger" onClick={handleSave} id="wd-save-btn">
+            Save
+          </Button>
+        </div>
+      </Form>
     </Container>
   );
 }
