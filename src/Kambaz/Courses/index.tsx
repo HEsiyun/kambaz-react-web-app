@@ -1,3 +1,4 @@
+import { useSelector } from "react-redux";
 import CourseNavigation from "./Navigation";
 import Modules from "./Modules";
 import Home from "./Home";
@@ -6,21 +7,30 @@ import AssignmentEditor from "./Assignments/Editor";
 import PeopleTable from "./People/Table";
 import { Navigate, Route, Routes, useParams, useLocation } from "react-router";
 import { FaAlignJustify } from "react-icons/fa";
+import * as db from "../Database"; 
 
-export default function Courses({
-  courses,
-}: {
-  courses: any[];
-}) {
+export default function Courses() {
   const { cid } = useParams();
-  const course = courses.find((course) => course._id === cid);
+  const { courses } = useSelector((state: any) => state.coursesReducer);
+  const { currentUser } = useSelector((state: any) => state.accountReducer);
+
+  const enrollments = db.enrollments || [];
+  // Only include courses this user is enrolled in
+  const enrolledCourses = courses.filter((course: any) =>
+    enrollments.some(
+      (enr: any) =>
+        String(enr.user) === String(currentUser?._id) &&
+        String(enr.course) === String(course._id)
+    )
+  );
+  const course = enrolledCourses.find((course: any) => course._id === cid);
   const { pathname } = useLocation();
 
   return (
     <div id="wd-courses">
       <h2 className="text-danger">
         <FaAlignJustify className="me-4 fs-4 mb-1" />
-        {course && course.name} &gt; {pathname.split("/")[4]}
+        {course.name} &gt; {pathname.split("/")[4]}
       </h2>
       <hr />
       <div className="d-flex">
