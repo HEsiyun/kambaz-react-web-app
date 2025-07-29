@@ -7,30 +7,32 @@ import AssignmentEditor from "./Assignments/Editor";
 import PeopleTable from "./People/Table";
 import { Navigate, Route, Routes, useParams, useLocation } from "react-router";
 import { FaAlignJustify } from "react-icons/fa";
-import * as db from "../Database"; 
 
 export default function Courses() {
   const { cid } = useParams();
-  const { courses } = useSelector((state: any) => state.coursesReducer);
+  const { courses, enrollments } = useSelector((state: any) => state.coursesReducer);
   const { currentUser } = useSelector((state: any) => state.accountReducer);
 
-  const enrollments = db.enrollments || [];
-  // Only include courses this user is enrolled in
-  const enrolledCourses = courses.filter((course: any) =>
-    enrollments.some(
-      (enr: any) =>
-        String(enr.user) === String(currentUser?._id) &&
-        String(enr.course) === String(course._id)
-    )
+  // Protect route: Only allow access if user is enrolled in this course
+  const isEnrolled = enrollments?.some(
+    (enr: any) =>
+      String(enr.user) === String(currentUser?._id) &&
+      String(enr.course) === String(cid)
   );
-  const course = enrolledCourses.find((course: any) => course._id === cid);
+
+  const course = courses.find((course: any) => course._id === cid);
   const { pathname } = useLocation();
+
+  // If not enrolled, redirect to Dashboard
+  if (!isEnrolled) {
+    return <Navigate to="/Kambaz/Dashboard" replace />;
+  }
 
   return (
     <div id="wd-courses">
       <h2 className="text-danger">
         <FaAlignJustify className="me-4 fs-4 mb-1" />
-        {course.name} &gt; {pathname.split("/")[4]}
+        {course?.name} &gt; {pathname.split("/")[4]}
       </h2>
       <hr />
       <div className="d-flex">
