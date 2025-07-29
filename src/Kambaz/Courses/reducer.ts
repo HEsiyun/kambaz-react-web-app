@@ -68,8 +68,8 @@ export const {
   addCourse,
   updateCourse,
   deleteCourse,
-//   enrollUser,
-//   unenrollUser,
+  enrollUser,
+  unenrollUser,
 } = coursesSlice.actions;
 
 export default coursesSlice.reducer;
