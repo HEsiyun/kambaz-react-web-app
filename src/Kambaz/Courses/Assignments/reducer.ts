@@ -1,39 +1,70 @@
-import { createSlice } from "@reduxjs/toolkit";
-import { assignments } from "../../Database";
-import { v4 as uuidv4 } from "uuid";
+// Kambaz/Courses/Assignments/reducer.ts
+import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
+import * as api from "./client";
 
-const initialState = {
-  assignments: assignments,
-};
+export interface Assignment {
+  _id: string;
+  course: string;
+  title: string;
+  description?: string;
+  points: number;
+  dueDate?: string;
+  availableDate?: string;
+  untilDate?: string;
+}
 
-const assignmentsSlice = createSlice({
+export const fetchAssignments = createAsyncThunk<Assignment[], string | undefined>(
+  "assignments/fetch",
+  async (cid) => (cid ? api.findAssignmentsByCourse(cid) : api.findAllAssignments())
+);
+
+export const createAssignmentThunk = createAsyncThunk<Assignment, Partial<Assignment>>(
+  "assignments/create",
+  api.createAssignment,
+);
+
+export const updateAssignmentThunk = createAsyncThunk<Assignment, Assignment>(
+  "assignments/update",
+  api.updateAssignment,
+);
+
+export const deleteAssignmentThunk = createAsyncThunk<string, string>(
+  "assignments/delete",
+  async (aid) => { await api.deleteAssignment(aid); return aid; }
+);
+
+type SliceState = { assignments: Assignment[]; loading: boolean; error: string | null };
+
+const slice = createSlice({
   name: "assignments",
-  initialState,
-  reducers: {
-    addAssignment: (state, { payload: assignment }) => {
-      const newAssignment: any = {
-        ...assignment,
-        _id: uuidv4(),
-      };
-      state.assignments = [...state.assignments, newAssignment] as any;
-    },
-    deleteAssignment: (state, { payload: assignmentId }) => {
-      state.assignments = state.assignments.filter(
-        (a: any) => a._id !== assignmentId
-      );
-    },
-    updateAssignment: (state, { payload: assignment }) => {
-      state.assignments = state.assignments.map((a: any) =>
-        a._id === assignment._id ? assignment : a
-      ) as any;
-    },
+  initialState: { assignments: [], loading: false, error: null } as SliceState,
+  reducers: {},
+  extraReducers: (builder) => {
+    builder
+      /* FETCH */
+      .addCase(fetchAssignments.pending,     (s) => { s.loading = true;  })
+      .addCase(fetchAssignments.fulfilled,   (s,a)=>{ s.loading=false; s.assignments=a.payload; })
+      .addCase(fetchAssignments.rejected,    (s,a)=>{ s.loading=false; s.error = String(a.error.message); })
+
+      /* CREATE */
+      .addCase(createAssignmentThunk.fulfilled,(s,a)=>{ s.assignments.push(a.payload); })
+
+      /* UPDATE */
+      .addCase(updateAssignmentThunk.fulfilled,(s,a)=>{
+        s.assignments = s.assignments.map(x => x._id === a.payload._id ? a.payload : x);
+      })
+
+      /* DELETE */
+      .addCase(deleteAssignmentThunk.fulfilled,(s,a)=>{
+        s.assignments = s.assignments.filter(x => x._id !== a.payload);
+      });
   },
 });
 
-export const {
-  addAssignment,
-  deleteAssignment,
-  updateAssignment,
-} = assignmentsSlice.actions;
-
-export default assignmentsSlice.reducer;
+export default slice.reducer;
+export const assignmentThunks = {
+  fetchAssignments,
+  createAssignmentThunk,
+  updateAssignmentThunk,
+  deleteAssignmentThunk,
+};

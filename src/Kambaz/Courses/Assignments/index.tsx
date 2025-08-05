@@ -1,156 +1,183 @@
-import { InputGroup, FormControl, Button, Modal } from "react-bootstrap";
-import { FaPlus, FaCheckCircle, FaTrash } from "react-icons/fa";
-import { BsThreeDotsVertical, BsGripVertical, BsCaretDownFill } from "react-icons/bs";
+// Kambaz/Courses/Assignments/index.tsx
+import { useEffect, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { useSelector, useDispatch } from "react-redux";
+import {
+  Button,
+  FormControl,
+  InputGroup,
+  Modal,
+} from "react-bootstrap";
+import {
+  FaPlus,
+  FaCheckCircle,
+  FaTrash,
+} from "react-icons/fa";
+import {
+  BsThreeDotsVertical,
+  BsGripVertical,
+  BsCaretDownFill,
+} from "react-icons/bs";
 import { GoSearch } from "react-icons/go";
 import { MdOutlineAssignment } from "react-icons/md";
-import { useParams, Link, useNavigate } from "react-router-dom";
-import { useSelector, useDispatch } from "react-redux";
-import { useState } from "react";
-import { deleteAssignment } from "./reducer"; // adjust import path if needed
 
-function formatDate(dateStr: string | number | Date) {
+import type { RootState, AppDispatch } from "../../store";
+import { assignmentThunks, type Assignment } from "./reducer";
+
+function formatDate(dateStr?: string) {
   if (!dateStr) return "";
   const d = new Date(dateStr);
-  const month = d.toLocaleString("default", { month: "short" });
-  const day = d.getDate();
-  let hour = d.getHours();
-  const minute = d.getMinutes().toString().padStart(2, "0");
-  const ampm = hour >= 12 ? "pm" : "am";
-  hour = hour % 12 || 12;
-  return `${month} ${day} at ${hour}:${minute}${ampm}`;
+  return d.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 export default function Assignments() {
   const { cid } = useParams();
   const navigate = useNavigate();
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
 
-  // Get assignments from Redux store
-  // Define RootState type if not already defined elsewhere
-  interface RootState {
-    assignmentsReducer: {
-      assignments: any[];
-    };
-    accountReducer: {
-      currentUser: { role?: string } | null;
-    };
-  }
+  /* fetch on mount / cid change */
+  useEffect(() => {
+    dispatch(assignmentThunks.fetchAssignments(cid));
+  }, [cid, dispatch]);
 
-  const assignments = useSelector((state: RootState) => state.assignmentsReducer.assignments);
-  const currentUser = useSelector((state: RootState) => state.accountReducer.currentUser);
+  const assignments = useSelector(
+    (s: RootState) => s.assignmentsReducer.assignments
+  );
+  const currentUser = useSelector(
+    (s: RootState) => s.accountReducer.currentUser as { role?: string } | null
+  );
   const isFaculty = currentUser?.role === "FACULTY";
 
-  const filtered = assignments.filter((a) => a.course === cid);
+  const list = assignments.filter((a) => a.course === cid);
 
-  // For delete confirmation dialog
-  const [showModal, setShowModal] = useState(false);
-  const [assignmentToDelete, setAssignmentToDelete] = useState(null);
-
-  const handleDelete = (aid: null) => {
-    if (aid) {
-      dispatch(deleteAssignment(aid));
-    }
-    setShowModal(false);
+  /* delete-confirmation modal */
+  const [show, setShow] = useState(false);
+  const [aidToDelete, setAid] = useState<string | null>(null);
+  const confirmDelete = () => {
+    if (aidToDelete)
+      dispatch(assignmentThunks.deleteAssignmentThunk(aidToDelete));
+    setShow(false);
   };
 
   return (
     <div id="wd-assignments" className="p-3">
-      {/* Top Bar */}
+      {/* 🔍 top bar */}
       <div className="d-flex mb-2 align-items-center">
         <InputGroup className="w-50">
           <InputGroup.Text>
             <GoSearch />
           </InputGroup.Text>
-          <FormControl placeholder="Search..." aria-label="Search" id="wd-search-assignment" />
+          <FormControl placeholder="Search…" />
         </InputGroup>
-        <div className="ms-auto">
-          <Button variant="secondary" size="sm" className="me-2" id="wd-add-assignment-group">
-            <FaPlus className="me-2" /> Group
+
+        {isFaculty && (
+          <Button
+            variant="danger"
+            size="sm"
+            className="ms-auto"
+            onClick={() =>
+              navigate(`/Kambaz/Courses/${cid}/Assignments/new`)
+            }
+          >
+            <FaPlus className="me-2" />
+            Assignment
           </Button>
-          {isFaculty && (
-            <Button
-              variant="danger"
-              size="sm"
-              id="wd-add-assignment"
-              onClick={() => navigate(`/Kambaz/Courses/${cid}/Assignments/new`)}
-            >
-              <FaPlus className="me-2" /> Assignment
-            </Button>
-          )}
-        </div>
+        )}
       </div>
 
-      {/* Assignments Title Row */}
+      {/* 📋 header */}
       <div className="d-flex align-items-center bg-light p-2 mb-2">
         <BsGripVertical className="me-2 text-secondary fs-4" />
-        <BsCaretDownFill className="me-2 text-dark fs-6" />
+        <BsCaretDownFill className="me-2" />
         <span className="fw-bold flex-grow-1">ASSIGNMENTS</span>
-        <span className="border rounded-pill px-3 py-1 bg-white text-dark me-2" style={{ fontSize: "1.15rem", borderWidth: "1.5px" }}>
+        <span className="border rounded-pill px-3 py-1 bg-white">
           40% of Total
         </span>
-        <Button variant="light" size="sm" className="border">
+        <Button variant="light" size="sm" className="ms-2">
           <FaPlus />
         </Button>
-        <Button variant="light" size="sm" className="border ms-2">
+        <Button variant="light" size="sm" className="ms-2">
           <BsThreeDotsVertical />
         </Button>
       </div>
 
-      {/* Assignments List */}
+      {/* 📜 list */}
       <ul className="list-group">
-        {filtered.map((a) => (
+        {list.map((a: Assignment) => (
           <li
-            className="list-group-item d-flex align-items-start border-0 border-start border-success border-4 mb-2"
             key={a._id}
+            className="list-group-item d-flex align-items-start border-0 border-start border-success border-4 mb-2"
           >
-            <BsGripVertical className="me-2 mt-1 text-secondary fs-5" />
-            <MdOutlineAssignment className="me-2 mt-1 text-success fs-5" />
+            <BsGripVertical className="me-2 mt-1 text-secondary" />
+            <MdOutlineAssignment className="me-2 mt-1 text-success" />
             <div className="flex-grow-1">
+              {/* title */}
               <Link
                 to={`/Kambaz/Courses/${cid}/Assignments/${a._id}`}
-                className="fw-bold text-decoration-none text-dark"
+                className="fw-bold text-decoration-none"
               >
                 {a.title}
               </Link>
+
+              {/* NEW: availability row */}
+              <div className="small">
+                <span className="text-danger">Multiple&nbsp;Modules</span>{" "}
+                |{" "}
+                {a.availableDate && (
+                  <>
+                    Not&nbsp;available&nbsp;until&nbsp;
+                    {formatDate(a.availableDate)} |{" "}
+                  </>
+                )}
+                {a.untilDate && (
+                  <>
+                    Available&nbsp;until&nbsp;
+                    {formatDate(a.untilDate)} |{" "}
+                  </>
+                )}
+              </div>
+
+              {/* existing due row */}
               <div className="text-secondary small">
-                <b>Due</b> {a.dueDate ? formatDate(a.dueDate) : ""} | {a.points} pts
+                <b>Due</b> {formatDate(a.dueDate)} | {a.points} pts
               </div>
             </div>
-            {/* Delete icon: Only show for faculty */}
-            <div className="ms-2 d-flex align-items-center">
-              {isFaculty && (
-                <Button
-                  variant="link"
-                  className="p-0 text-danger"
-                  onClick={() => {
-                    setAssignmentToDelete(a._id);
-                    setShowModal(true);
-                  }}
-                >
-                  <FaTrash />
-                </Button>
-              )}
-              <FaCheckCircle className="text-success fs-4 ms-2" />
-              <BsThreeDotsVertical className="fs-5 ms-2" />
-            </div>
+
+            {/* actions */}
+            {isFaculty && (
+              <Button
+                variant="link"
+                className="p-0 text-danger"
+                onClick={() => {
+                  setAid(a._id);
+                  setShow(true);
+                }}
+              >
+                <FaTrash />
+              </Button>
+            )}
+            <FaCheckCircle className="text-success ms-2" />
+            <BsThreeDotsVertical className="ms-2" />
           </li>
         ))}
       </ul>
 
-      {/* Delete confirmation dialog */}
-      <Modal show={showModal} onHide={() => setShowModal(false)}>
+      {/* 🗑️ confirm modal */}
+      <Modal show={show} onHide={() => setShow(false)}>
         <Modal.Header closeButton>
           <Modal.Title>Delete Assignment</Modal.Title>
         </Modal.Header>
-        <Modal.Body>Are you sure you want to delete this assignment?</Modal.Body>
+        <Modal.Body>Are you sure?</Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowModal(false)}>
+          <Button variant="secondary" onClick={() => setShow(false)}>
             Cancel
           </Button>
-          <Button
-            variant="danger"
-            onClick={() => handleDelete(assignmentToDelete)}
-          >
+          <Button variant="danger" onClick={confirmDelete}>
             Delete
           </Button>
         </Modal.Footer>
