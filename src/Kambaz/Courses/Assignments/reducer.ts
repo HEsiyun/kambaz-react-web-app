@@ -8,32 +8,45 @@ export interface Assignment {
   title: string;
   description?: string;
   points: number;
-  dueDate?: string;
-  availableDate?: string;
-  untilDate?: string;
+  dueDate?: string;         // ISO date string
+  availableDate?: string;   // ISO date string
+  untilDate?: string;       // ISO date string
 }
 
+/* -------------------- THUNKS -------------------- */
+
+// If cid is provided, fetch just that course's assignments; otherwise fetch all
 export const fetchAssignments = createAsyncThunk<Assignment[], string | undefined>(
   "assignments/fetch",
   async (cid) => (cid ? api.findAssignmentsByCourse(cid) : api.findAllAssignments())
 );
 
-export const createAssignmentThunk = createAsyncThunk<Assignment, Partial<Assignment>>(
-  "assignments/create",
-  api.createAssignment,
-);
+// NOTE: payload must include `course`, so don't use Partial<>
+export const createAssignmentThunk = createAsyncThunk<
+  Assignment,
+  Omit<Assignment, "_id">
+>("assignments/create", api.createAssignment);
 
-export const updateAssignmentThunk = createAsyncThunk<Assignment, Assignment>(
-  "assignments/update",
-  api.updateAssignment,
-);
+export const updateAssignmentThunk = createAsyncThunk<
+  Assignment,
+  Assignment
+>("assignments/update", api.updateAssignment);
 
 export const deleteAssignmentThunk = createAsyncThunk<string, string>(
   "assignments/delete",
-  async (aid) => { await api.deleteAssignment(aid); return aid; }
+  async (aid) => {
+    await api.deleteAssignment(aid);
+    return aid;
+  }
 );
 
-type SliceState = { assignments: Assignment[]; loading: boolean; error: string | null };
+/* -------------------- SLICE -------------------- */
+
+type SliceState = {
+  assignments: Assignment[];
+  loading: boolean;
+  error: string | null;
+};
 
 const slice = createSlice({
   name: "assignments",
@@ -41,27 +54,40 @@ const slice = createSlice({
   reducers: {},
   extraReducers: (builder) => {
     builder
-      /* FETCH */
-      .addCase(fetchAssignments.pending,     (s) => { s.loading = true;  })
-      .addCase(fetchAssignments.fulfilled,   (s,a)=>{ s.loading=false; s.assignments=a.payload; })
-      .addCase(fetchAssignments.rejected,    (s,a)=>{ s.loading=false; s.error = String(a.error.message); })
-
-      /* CREATE */
-      .addCase(createAssignmentThunk.fulfilled,(s,a)=>{ s.assignments.push(a.payload); })
-
-      /* UPDATE */
-      .addCase(updateAssignmentThunk.fulfilled,(s,a)=>{
-        s.assignments = s.assignments.map(x => x._id === a.payload._id ? a.payload : x);
+      // FETCH
+      .addCase(fetchAssignments.pending, (s) => {
+        s.loading = true;
+      })
+      .addCase(fetchAssignments.fulfilled, (s, a) => {
+        s.loading = false;
+        s.assignments = a.payload;
+      })
+      .addCase(fetchAssignments.rejected, (s, a) => {
+        s.loading = false;
+        s.error = String(a.error.message || "Failed to load assignments");
       })
 
-      /* DELETE */
-      .addCase(deleteAssignmentThunk.fulfilled,(s,a)=>{
-        s.assignments = s.assignments.filter(x => x._id !== a.payload);
+      // CREATE
+      .addCase(createAssignmentThunk.fulfilled, (s, a) => {
+        s.assignments.push(a.payload);
+      })
+
+      // UPDATE
+      .addCase(updateAssignmentThunk.fulfilled, (s, a) => {
+        s.assignments = s.assignments.map((x) =>
+          x._id === a.payload._id ? a.payload : x
+        );
+      })
+
+      // DELETE
+      .addCase(deleteAssignmentThunk.fulfilled, (s, a) => {
+        s.assignments = s.assignments.filter((x) => x._id !== a.payload);
       });
   },
 });
 
 export default slice.reducer;
+
 export const assignmentThunks = {
   fetchAssignments,
   createAssignmentThunk,

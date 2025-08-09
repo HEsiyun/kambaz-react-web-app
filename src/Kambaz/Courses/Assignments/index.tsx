@@ -2,22 +2,9 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
-import {
-  Button,
-  FormControl,
-  InputGroup,
-  Modal,
-} from "react-bootstrap";
-import {
-  FaPlus,
-  FaCheckCircle,
-  FaTrash,
-} from "react-icons/fa";
-import {
-  BsThreeDotsVertical,
-  BsGripVertical,
-  BsCaretDownFill,
-} from "react-icons/bs";
+import { Button, FormControl, InputGroup, Modal } from "react-bootstrap";
+import { FaPlus, FaCheckCircle, FaTrash } from "react-icons/fa";
+import { BsThreeDotsVertical, BsGripVertical, BsCaretDownFill } from "react-icons/bs";
 import { GoSearch } from "react-icons/go";
 import { MdOutlineAssignment } from "react-icons/md";
 
@@ -36,37 +23,35 @@ function formatDate(dateStr?: string) {
 }
 
 export default function Assignments() {
-  const { cid } = useParams();
+  const { cid }  = useParams();
   const navigate = useNavigate();
   const dispatch = useDispatch<AppDispatch>();
 
-  /* fetch on mount / cid change */
+  // Load assignments for this course
   useEffect(() => {
     dispatch(assignmentThunks.fetchAssignments(cid));
   }, [cid, dispatch]);
 
-  const assignments = useSelector(
-    (s: RootState) => s.assignmentsReducer.assignments
-  );
+  const assignments = useSelector((s: RootState) => s.assignmentsReducer.assignments);
   const currentUser = useSelector(
     (s: RootState) => s.accountReducer.currentUser as { role?: string } | null
   );
   const isFaculty = currentUser?.role === "FACULTY";
 
+  // Extra guard in case the API returns all courses
   const list = assignments.filter((a) => a.course === cid);
 
-  /* delete-confirmation modal */
+  // Delete confirmation
   const [show, setShow] = useState(false);
   const [aidToDelete, setAid] = useState<string | null>(null);
   const confirmDelete = () => {
-    if (aidToDelete)
-      dispatch(assignmentThunks.deleteAssignmentThunk(aidToDelete));
+    if (aidToDelete) dispatch(assignmentThunks.deleteAssignmentThunk(aidToDelete));
     setShow(false);
   };
 
   return (
     <div id="wd-assignments" className="p-3">
-      {/* 🔍 top bar */}
+      {/* Top bar */}
       <div className="d-flex mb-2 align-items-center">
         <InputGroup className="w-50">
           <InputGroup.Text>
@@ -80,9 +65,7 @@ export default function Assignments() {
             variant="danger"
             size="sm"
             className="ms-auto"
-            onClick={() =>
-              navigate(`/Kambaz/Courses/${cid}/Assignments/new`)
-            }
+            onClick={() => navigate(`/Kambaz/Courses/${cid}/Assignments/new`)}
           >
             <FaPlus className="me-2" />
             Assignment
@@ -90,14 +73,12 @@ export default function Assignments() {
         )}
       </div>
 
-      {/* 📋 header */}
+      {/* Section header */}
       <div className="d-flex align-items-center bg-light p-2 mb-2">
         <BsGripVertical className="me-2 text-secondary fs-4" />
         <BsCaretDownFill className="me-2" />
         <span className="fw-bold flex-grow-1">ASSIGNMENTS</span>
-        <span className="border rounded-pill px-3 py-1 bg-white">
-          40% of Total
-        </span>
+        <span className="border rounded-pill px-3 py-1 bg-white">40% of Total</span>
         <Button variant="light" size="sm" className="ms-2">
           <FaPlus />
         </Button>
@@ -106,7 +87,7 @@ export default function Assignments() {
         </Button>
       </div>
 
-      {/* 📜 list */}
+      {/* List */}
       <ul className="list-group">
         {list.map((a: Assignment) => (
           <li
@@ -116,7 +97,7 @@ export default function Assignments() {
             <BsGripVertical className="me-2 mt-1 text-secondary" />
             <MdOutlineAssignment className="me-2 mt-1 text-success" />
             <div className="flex-grow-1">
-              {/* title */}
+              {/* Title links to editor using the assignment _id */}
               <Link
                 to={`/Kambaz/Courses/${cid}/Assignments/${a._id}`}
                 className="fw-bold text-decoration-none"
@@ -124,31 +105,24 @@ export default function Assignments() {
                 {a.title}
               </Link>
 
-              {/* NEW: availability row */}
+              {/* Availability line */}
               <div className="small">
-                <span className="text-danger">Multiple&nbsp;Modules</span>{" "}
-                |{" "}
+                <span className="text-danger">Multiple&nbsp;Modules</span> |{" "}
                 {a.availableDate && (
                   <>
-                    Not&nbsp;available&nbsp;until&nbsp;
-                    {formatDate(a.availableDate)} |{" "}
+                    Not&nbsp;available&nbsp;until&nbsp;{formatDate(a.availableDate)} |{" "}
                   </>
                 )}
-                {a.untilDate && (
-                  <>
-                    Available&nbsp;until&nbsp;
-                    {formatDate(a.untilDate)} |{" "}
-                  </>
-                )}
+                {a.untilDate && <>Available&nbsp;until&nbsp;{formatDate(a.untilDate)} | </>}
               </div>
 
-              {/* existing due row */}
+              {/* Due line */}
               <div className="text-secondary small">
                 <b>Due</b> {formatDate(a.dueDate)} | {a.points} pts
               </div>
             </div>
 
-            {/* actions */}
+            {/* Actions */}
             {isFaculty && (
               <Button
                 variant="link"
@@ -167,7 +141,7 @@ export default function Assignments() {
         ))}
       </ul>
 
-      {/* 🗑️ confirm modal */}
+      {/* Delete confirmation modal */}
       <Modal show={show} onHide={() => setShow(false)}>
         <Modal.Header closeButton>
           <Modal.Title>Delete Assignment</Modal.Title>
