@@ -9,9 +9,9 @@ const modulesSlice = createSlice({
   name: "modules",
   initialState,
   reducers: {
-    setModules: (state, action) => {
-      state.modules = action.payload;
-    },
+    // setModules: (state, action) => {
+    //   state.modules = action.payload;
+    // },
     addModule: (state, { payload: module }) => {
       const newModule: any = {
         _id: uuidv4(),
@@ -34,6 +34,9 @@ const modulesSlice = createSlice({
         m._id === moduleId ? { ...m, editing: true } : m
       ) as any;
     },
+    setModules: (state, { payload: modules }) => {
+      state.modules = modules;
+      },
   },
 });
 

@@ -14,9 +14,9 @@ export default function PeopleDetails() {
   const navigate = useNavigate();
 
   // local edit state
-  const [name, setName] = useState("");
+  const [name, setName]   = useState("");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<string>("");
+  const [role, setRole]   = useState<string>("");
   const [editing, setEditing] = useState(false);
 
   const deleteUser = async (id: string) => {
@@ -28,14 +28,13 @@ export default function PeopleDetails() {
     if (!uid) return;
     const u = await client.findUserById(uid);
     setUser(u);
-    // seed edit fields
     setName(`${u?.firstName ?? ""} ${u?.lastName ?? ""}`.trim());
     setEmail(u?.email ?? "");
     setRole(u?.role ?? "");
   };
 
   const saveUser = async () => {
-    const [firstName, lastName] = name.split(" ");
+    const [firstName = "", lastName = ""] = name.trim().split(/\s+/, 2);
     const updatedUser = { ...user, firstName, lastName, email, role };
     await client.updateUser(updatedUser);
     setUser(updatedUser);
@@ -64,7 +63,6 @@ export default function PeopleDetails() {
 
       <hr />
 
-      {/* Name row with edit/save icons */}
       <div className="text-danger fs-4">
         {!editing && (
           <FaPencil
@@ -96,7 +94,6 @@ export default function PeopleDetails() {
         )}
       </div>
 
-      {/* Email */}
       <div className="mt-3">
         <b>Email:</b>{" "}
         {!editing ? (
@@ -113,7 +110,6 @@ export default function PeopleDetails() {
         )}
       </div>
 
-      {/* Role */}
       <div className="mt-3">
         <b>Role:</b>{" "}
         {!editing ? (
@@ -124,19 +120,14 @@ export default function PeopleDetails() {
             value={role}
             onChange={(e) => setRole(e.target.value)}
           >
-            <option value="" disabled>
-              Select role…
-            </option>
+            <option value="" disabled>Select role…</option>
             {ROLE_OPTIONS.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
+              <option key={r} value={r}>{r}</option>
             ))}
           </Form.Select>
         )}
       </div>
 
-      {/* Other read-only fields you already had */}
       <div className="mt-3">
         <b>Login ID:</b> <span className="wd-login-id">{user.loginId}</span>
         <br />
@@ -148,16 +139,10 @@ export default function PeopleDetails() {
 
       <hr />
 
-      <button
-        onClick={() => deleteUser(uid)}
-        className="btn btn-danger float-end wd-delete"
-      >
+      <button onClick={() => deleteUser(uid)} className="btn btn-danger float-end wd-delete">
         Delete
       </button>
-      <button
-        onClick={() => navigate(-1)}
-        className="btn btn-secondary float-start me-2 wd-cancel"
-      >
+      <button onClick={() => navigate(-1)} className="btn btn-secondary float-start me-2 wd-cancel">
         Cancel
       </button>
     </div>

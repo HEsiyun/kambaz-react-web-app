@@ -13,8 +13,8 @@ import {
   editModule,
   addModule,
 } from "./reducer";
-import * as coursesClient from "../client";    // For fetch/create
-import * as modulesClient from "../client";    // For delete
+import * as courseClient from "../client";
+import * as modulesClient from "./client";
 
 export default function Modules() {
   const { cid } = useParams();
@@ -25,31 +25,35 @@ export default function Modules() {
   const isFaculty = currentUser?.role === "FACULTY";
   const dispatch = useDispatch();
 
-  // Save module to server and update state
-  const saveModule = async (module: any) => { await modulesClient.updateModule(module); dispatch(updateModule(module)); };
-
-  // FETCH MODULES FROM SERVER ON MOUNT
+  // FETCH MODULES WHEN COURSE CHANGES
   useEffect(() => {
-    const fetchModules = async () => {
-      const modules = await coursesClient.findModulesForCourse(cid as string);
+    const fetchModulesForCourse = async () => {
+      const modules = await courseClient.findModulesForCourse(cid as string);
       dispatch(setModules(modules));
     };
-    fetchModules();
+    fetchModulesForCourse();
   }, [cid, dispatch]);
 
-  // CREATE MODULE FOR THIS COURSE (SERVER)
-  const createModuleForCourse = async () => {
-    if (!cid) return;
-    const newModule = { name: moduleName, course: cid };
-    const module = await coursesClient.createModuleForCourse(cid, newModule);
-    dispatch(addModule(module));
+  // ADD MODULE HANDLER
+  const addModuleHandler = async () => {
+    const newModule = await courseClient.createModuleForCourse(cid!, {
+      name: moduleName,
+      course: cid,
+    });
+    dispatch(addModule(newModule));
     setModuleName("");
   };
 
-  // REMOVE MODULE FROM SERVER AND STATE
-  const removeModule = async (moduleId: string) => {
+  // DELETE MODULE HANDLER
+  const deleteModuleHandler = async (moduleId: string) => {
     await modulesClient.deleteModule(moduleId);
     dispatch(deleteModule(moduleId));
+  };
+
+  // UPDATE MODULE HANDLER (as per textbook requirement)
+  const updateModuleHandler = async (module: any) => {
+    await modulesClient.updateModule(module);
+    dispatch(updateModule(module));
   };
 
   return (
@@ -59,7 +63,7 @@ export default function Modules() {
         <ModulesControls
           moduleName={moduleName}
           setModuleName={setModuleName}
-          addModule={createModuleForCourse}
+          addModule={addModuleHandler}
         />
       )}
       <br /><br /><br /><br />
@@ -78,12 +82,11 @@ export default function Modules() {
                   className="w-50 d-inline-block"
                   value={module.name}
                   onChange={(e) =>
-                    dispatch(updateModule({ ...module, name: e.target.value }))
+                    updateModuleHandler({ ...module, name: e.target.value })
                   }
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
-                      saveModule({ ...module, editing: false });
-                      dispatch(updateModule({ ...module, editing: false }));
+                      updateModuleHandler({ ...module, editing: false });
                     }
                   }}
                   autoFocus
@@ -93,7 +96,7 @@ export default function Modules() {
               {isFaculty && (
                 <ModuleControlButtons
                   moduleId={module._id}
-                  deleteModule={removeModule}
+                  deleteModule={(moduleId) => deleteModuleHandler(moduleId)}
                   editModule={(moduleId: string) =>
                     dispatch(editModule(moduleId))
                   }

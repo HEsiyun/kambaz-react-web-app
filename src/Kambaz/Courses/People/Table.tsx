@@ -2,12 +2,21 @@ import { Table } from "react-bootstrap";
 import { FaUserCircle } from "react-icons/fa";
 import PeopleDetails from "./Details";
 import { Link } from "react-router-dom";
+import { useParams } from "react-router";
 
 // Accepts users as a prop; defaults to empty array if not provided
 export default function PeopleTable({ users = [] }: { users?: any[] }) {
+  const { cid } = useParams();
+  // If we're under /Courses/:cid/People, link there; else fallback to global users
+  const detailsBase = cid
+    ? `/Kambaz/Courses/${cid}/People`
+    : `/Kambaz/Account/Users`;
+
   return (
     <div id="wd-people-table">
+      {/* Side panel will render only when a :uid is present in the URL */}
       <PeopleDetails />
+
       <Table striped>
         <thead>
           <tr>
@@ -20,10 +29,13 @@ export default function PeopleTable({ users = [] }: { users?: any[] }) {
           </tr>
         </thead>
         <tbody>
-          {users.map((user) => (
+          {(users || []).map((user) => (
             <tr key={user._id}>
               <td className="wd-full-name text-nowrap">
-                <Link to={`/Kambaz/Account/Users/${user._id}`} className="text-decoration-none">
+                <Link
+                  to={`${detailsBase}/${user._id}`}
+                  className="text-decoration-none"
+                >
                   <FaUserCircle className="me-2 fs-1 text-secondary" />
                   <span className="wd-first-name">{user.firstName}</span>{" "}
                   <span className="wd-last-name">{user.lastName}</span>
