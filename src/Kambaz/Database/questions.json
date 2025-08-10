@@ -1,0 +1,154 @@
+[
+    {
+      "_id": "QZ101-Q1",
+      "quiz": "QZ101",
+      "type": "MC",
+      "title": "Which expression defines thrust?",
+      "points": 5,
+      "prompt": "Select the correct expression for the thrust of a rocket.",
+      "choices": [
+        { "_id": "c1", "text": "T = \u1e25 \u22c5 g_0", "isCorrect": false },
+        { "_id": "c2", "text": "T = \u1e25 \u22c5 V_e + (p_e - p_a)A_e", "isCorrect": true },
+        { "_id": "c3", "text": "T = m \u22c5 a / I_{sp}", "isCorrect": false },
+        { "_id": "c4", "text": "T = \u0394V \u22c5 m_p", "isCorrect": false }
+      ],
+      "shuffle": true
+    },
+    {
+      "_id": "QZ101-Q2",
+      "quiz": "QZ101",
+      "type": "TF",
+      "title": "Specific impulse measures efficiency.",
+      "points": 5,
+      "prompt": "Specific impulse (Isp) is a measure of rocket propellant efficiency.",
+      "answer": true
+    },
+    {
+      "_id": "QZ101-Q3",
+      "quiz": "QZ101",
+      "type": "FIB",
+      "title": "Name the ideal expansion device",
+      "points": 5,
+      "prompt": "The component that accelerates exhaust to produce thrust is the ______.",
+      "answers": ["nozzle", "de Laval nozzle"],
+      "caseInsensitive": true,
+      "trimInput": true
+    },
+    {
+      "_id": "QZ101-Q4",
+      "quiz": "QZ101",
+      "type": "MC",
+      "title": "Which propellant pair is cryogenic?",
+      "points": 5,
+      "prompt": "Choose the cryogenic propellant combination.",
+      "choices": [
+        { "_id": "c1", "text": "RP-1 / N2O4", "isCorrect": false },
+        { "_id": "c2", "text": "Hydrazine / Nitrous Oxide", "isCorrect": false },
+        { "_id": "c3", "text": "LOX / LH2", "isCorrect": true },
+        { "_id": "c4", "text": "UDMH / RFNA", "isCorrect": false }
+      ],
+      "shuffle": true
+    },
+  
+    {
+      "_id": "QZ102-Q1",
+      "quiz": "QZ102",
+      "type": "MC",
+      "title": "Lift coefficient depends on…",
+      "points": 5,
+      "prompt": "Which variables most directly influence the lift coefficient CL for a given airfoil?",
+      "choices": [
+        { "_id": "c1", "text": "Angle of attack and Reynolds number", "isCorrect": true },
+        { "_id": "c2", "text": "Altitude and longitude", "isCorrect": false },
+        { "_id": "c3", "text": "Fuel type and wing color", "isCorrect": false },
+        { "_id": "c4", "text": "Cockpit temperature only", "isCorrect": false }
+      ],
+      "shuffle": true
+    },
+    {
+      "_id": "QZ102-Q2",
+      "quiz": "QZ102",
+      "type": "TF",
+      "title": "Drag always decreases with speed.",
+      "points": 5,
+      "prompt": "As flight speed increases from subsonic to supersonic, drag always decreases.",
+      "answer": false
+    },
+    {
+      "_id": "QZ102-Q3",
+      "quiz": "QZ102",
+      "type": "FIB",
+      "title": "Pressure distribution peak",
+      "points": 5,
+      "prompt": "At moderate angles of attack on a subsonic airfoil, the minimum pressure typically occurs near the ______ of the upper surface.",
+      "answers": ["leading edge", "front"],
+      "caseInsensitive": true,
+      "trimInput": true
+    },
+    {
+      "_id": "QZ102-Q4",
+      "quiz": "QZ102",
+      "type": "MC",
+      "title": "Boundary layer transition",
+      "points": 5,
+      "prompt": "Transition from laminar to turbulent boundary layer is promoted by:",
+      "choices": [
+        { "_id": "c1", "text": "Surface roughness and adverse pressure gradient", "isCorrect": true },
+        { "_id": "c2", "text": "Perfectly smooth surfaces", "isCorrect": false },
+        { "_id": "c3", "text": "Zero angle of attack", "isCorrect": false },
+        { "_id": "c4", "text": "Lower Reynolds number only", "isCorrect": false }
+      ],
+      "shuffle": true
+    },
+  
+    {
+      "_id": "QZ103-Q1",
+      "quiz": "QZ103",
+      "type": "TF",
+      "title": "Thermal control keeps components in limits.",
+      "points": 5,
+      "prompt": "The spacecraft thermal control subsystem ensures components stay within allowable temperature limits.",
+      "answer": true
+    },
+    {
+      "_id": "QZ103-Q2",
+      "quiz": "QZ103",
+      "type": "MC",
+      "title": "Power subsystem choice for LEO smallsat",
+      "points": 5,
+      "prompt": "Which power source is most typical for a small satellite in Low Earth Orbit?",
+      "choices": [
+        { "_id": "c1", "text": "RTG only", "isCorrect": false },
+        { "_id": "c2", "text": "Solar arrays with rechargeable batteries", "isCorrect": true },
+        { "_id": "c3", "text": "Combustion generator", "isCorrect": false },
+        { "_id": "c4", "text": "Flywheel exclusively", "isCorrect": false }
+      ],
+      "shuffle": true
+    },
+    {
+      "_id": "QZ103-Q3",
+      "quiz": "QZ103",
+      "type": "FIB",
+      "title": "Systems approach term",
+      "points": 5,
+      "prompt": "In systems engineering, the end-to-end description of what a system must do is the ______.",
+      "answers": ["requirements", "system requirements", "mission requirements"],
+      "caseInsensitive": true,
+      "trimInput": true
+    },
+    {
+      "_id": "QZ103-Q4",
+      "quiz": "QZ103",
+      "type": "MC",
+      "title": "Attitude determination sensor",
+      "points": 5,
+      "prompt": "Which sensor is commonly used for precise attitude determination?",
+      "choices": [
+        { "_id": "c1", "text": "Star tracker", "isCorrect": true },
+        { "_id": "c2", "text": "Thermistor", "isCorrect": false },
+        { "_id": "c3", "text": "Microphone array", "isCorrect": false },
+        { "_id": "c4", "text": "Humidity sensor", "isCorrect": false }
+      ],
+      "shuffle": true
+    }
+  ]
