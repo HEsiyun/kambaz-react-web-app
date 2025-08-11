@@ -1,8 +1,8 @@
+// src/Kambaz/Courses/Quizzes/Editor.tsx
 import { useEffect, useMemo, useState } from "react";
 import { Button, Col, Form, Nav, Row, Spinner } from "react-bootstrap";
-import { Link, useNavigate, useParams, Routes, Route } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
-
 
 type QuizSettings = {
   shuffleAnswers?: boolean;
@@ -52,7 +52,8 @@ export default function QuizEditor() {
   // form state
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [type, setType] = useState<NonNullable<Quiz["type"]>>("GRADED_QUIZ");
+  const [type, setType] =
+    useState<NonNullable<Quiz["type"]>>("GRADED_QUIZ");
   const [group, setGroup] =
     useState<NonNullable<Quiz["assignmentGroup"]>>("Quizzes");
 
@@ -80,7 +81,7 @@ export default function QuizEditor() {
         setLoading(true);
         const [{ data: quiz }, { data: pts }] = await Promise.all([
           api.get(`/api/quizzes/${qid}`),
-          api.get(`/api/quizzes/${qid}/points`), // { total: number }
+          api.get(`/api/quizzes/${qid}/points`), // -> { quiz, total }
         ]);
         if (!alive) return;
 
@@ -105,8 +106,8 @@ export default function QuizEditor() {
         setDueDate(quiz.dueDate?.substring(0, 10) ?? "");
 
         setPoints(pts?.total ?? 0);
-      } catch (e) {
-        // optional: toast error
+      } catch {
+        // optional toast
       } finally {
         if (alive) setLoading(false);
       }
@@ -116,32 +117,42 @@ export default function QuizEditor() {
     };
   }, [api, qid]);
 
-  const payload = (): Partial<Quiz> => ({
-    title,
-    description,
-    type,
-    assignmentGroup: group,
-    availableFrom: availableFrom || undefined,
-    availableUntil: availableUntil || undefined,
-    dueDate: dueDate || undefined,
-    settings: {
+  // Build payload, omitting empty strings & attempts when not needed
+  const buildPayload = (): Partial<Quiz> => {
+    const dates: any = {};
+    if (availableFrom) dates.availableFrom = availableFrom;
+    if (availableUntil) dates.availableUntil = availableUntil;
+    if (dueDate) dates.dueDate = dueDate;
+
+    const baseSettings: QuizSettings = {
       shuffleAnswers,
       timeLimitMin: Number(timeLimitMin) || 0,
       multipleAttempts,
-      attemptsAllowed: Number(attemptsAllowed) || 1,
       showCorrectAfter,
       accessCode,
       oneQuestionAtATime,
       webcamRequired,
       lockAfterAnswering,
-    },
-  });
+    };
+    if (multipleAttempts) {
+      baseSettings.attemptsAllowed = Number(attemptsAllowed) || 1;
+    }
+
+    return {
+      title,
+      description,
+      type,
+      assignmentGroup: group,
+      ...dates,
+      settings: baseSettings,
+    };
+  };
 
   const save = async () => {
     try {
       setSaving(true);
-      await api.put(`/api/quizzes/${qid}`, payload());
-      navigate(`/Kambaz/Courses/${cid}/Quizzes/${qid}`); // back to details
+      await api.put(`/api/quizzes/${qid}`, buildPayload());
+      navigate(`/Kambaz/Courses/${cid}/Quizzes/${qid}`);
     } finally {
       setSaving(false);
     }
@@ -150,9 +161,9 @@ export default function QuizEditor() {
   const saveAndPublish = async () => {
     try {
       setSaving(true);
-      await api.put(`/api/quizzes/${qid}`, payload());
+      await api.put(`/api/quizzes/${qid}`, buildPayload());
       await api.put(`/api/quizzes/${qid}/publish`, { published: true });
-      navigate(`/Kambaz/Courses/${cid}/Quizzes`); // back to list
+      navigate(`/Kambaz/Courses/${cid}/Quizzes`);
     } finally {
       setSaving(false);
     }
@@ -170,11 +181,9 @@ export default function QuizEditor() {
   return (
     <div className="p-3" style={{ maxWidth: 900 }}>
       {/* Tabs */}
-      <Nav variant="tabs" defaultActiveKey="details" className="mb-3">
+      <Nav variant="tabs" className="mb-3">
         <Nav.Item>
-          <Nav.Link eventKey="details" as="span" className="active">
-            Details
-          </Nav.Link>
+          <Nav.Link as="span" className="active">Details</Nav.Link>
         </Nav.Item>
         <Nav.Item>
           <Nav.Link
@@ -205,16 +214,17 @@ export default function QuizEditor() {
 
         <Form.Group className="mb-4">
           <Form.Label>Description</Form.Label>
+          {/* Plain textarea (rubric allows WYSIWYG or textarea) */}
           <Form.Control
             as="textarea"
             rows={6}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Describe the quiz (WYSIWYG placeholder)"
+            placeholder="Describe the quiz"
           />
         </Form.Group>
 
-        {/* Left/Right columns */}
+        {/* Two columns */}
         <Row>
           <Col md={6}>
             <Form.Group className="mb-3">

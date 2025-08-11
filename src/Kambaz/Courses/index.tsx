@@ -11,6 +11,7 @@ import { FaAlignJustify } from "react-icons/fa";
 import Quizzes from "./Quizzes";
 import QuizDetails from "./Quizzes/Details";
 import QuizEditor from "./Quizzes/Editor";
+import QuestionsTab from "./Quizzes/QuestionsTab";
 
 export default function Courses() {
   const { cid } = useParams();
@@ -44,25 +45,26 @@ export default function Courses() {
           <CourseNavigation />
         </div>
         <div className="flex-fill">
-          <Routes>
-            <Route path="/" element={<Navigate to="Home" />} />
-            <Route path="Home" element={<Home />} />
-            <Route path="Modules" element={<Modules />} />
-            <Route path="Piazza" element={<h2>Piazza</h2>} />
-            <Route path="Zoom" element={<h2>Zoom</h2>} />
-            <Route path="Assignments" element={<Assignments />} />
-            <Route path="Assignments/new" element={<AssignmentEditor />} />
-            <Route path="Assignments/:aid" element={<AssignmentEditor />} />
-            <Route path="Grades" element={<h2>Grades</h2>} />
-            <Route path="People" element={<CoursePeople />} />
-            <Route path="Quizzes/*" element={<Quizzes />} />
-            <Route path="Quizzes/:qid" element={<QuizDetails />} />
-            <Route path="Quizzes/:qid/edit" element={<QuizEditor />} />
-             {/* later: 
-            <Route path="Quizzes/:qid/preview" element={<QuizPreview />} />
-            <Route path="Quizzes/:qid/edit" element={<QuizEditor />} />
-            <Route path="Quizzes/:qid/take" element={<QuizTake />} /> */}
-          </Routes>
+        <Routes>
+          <Route path="/" element={<Navigate to="Home" />} />
+          <Route path="Home" element={<Home />} />
+          <Route path="Modules" element={<Modules />} />
+          <Route path="Piazza" element={<h2>Piazza</h2>} />
+          <Route path="Zoom" element={<h2>Zoom</h2>} />
+
+          <Route path="Assignments" element={<Assignments />} />
+          <Route path="Assignments/new" element={<AssignmentEditor />} />
+          <Route path="Assignments/:aid" element={<AssignmentEditor />} />
+
+          {/* QUIZZES */}
+          <Route path="Quizzes" element={<Quizzes />} />                     {/* list */}
+          <Route path="Quizzes/:qid" element={<QuizDetails />} />            {/* details */}
+          <Route path="Quizzes/:qid/edit" element={<QuizEditor />} />        {/* details editor */}
+          <Route path="Quizzes/:qid/questions" element={<QuestionsTab />} /> {/* questions editor */}
+
+          <Route path="Grades" element={<h2>Grades</h2>} />
+          <Route path="People" element={<CoursePeople />} />
+        </Routes>
         </div>
       </div>
     </div>
