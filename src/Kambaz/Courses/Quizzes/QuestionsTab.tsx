@@ -1,5 +1,5 @@
 // src/Kambaz/Courses/Quizzes/QuestionsTab.tsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { Button } from "react-bootstrap";
@@ -7,148 +7,162 @@ import type { RootState, AppDispatch } from "../../store";
 import { questionThunks } from "./questionsReducer";
 import QuestionCard from "./QuestionCard";
 
-/** Keep types aligned with your server & questionsClient */
+/** Types aligned with server */
 type Choice = { _id: string; text: string; isCorrect?: boolean };
 export type Question = {
-  _id: string;
+  _id: string;                 // 'tmp-xxx' for local drafts
   quiz: string;
   type: "MC" | "TF" | "FIB";
   title: string;
   points: number;
-  prompt: string;         // HTML
-  choices?: Choice[];     // MC
-  answer?: boolean;       // TF
-  answers?: string[];     // FIB
+  prompt: string;
+  choices?: Choice[];
+  answer?: boolean;
+  answers?: string[];
 };
 
+const uid = () =>
+  (typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2));
+
+const isTemp = (id: string) => id.startsWith("tmp-");
+
 export default function QuestionsTab() {
-  const { cid, qid } = useParams(); // route: /Kambaz/Courses/:cid/Quizzes/:qid/questions (or /edit taps into this tab)
+  const { cid, qid } = useParams();
   const navigate = useNavigate();
   const dispatch = useDispatch<AppDispatch>();
 
-  const { items: questions, loading } = useSelector(
+  const { items: serverQuestions, loading } = useSelector(
     (s: RootState) => s.questionsReducer
   ) as { items: Question[]; loading: boolean };
 
-  /** Track drafts across cards to enable page-level Save/Cancel */
-  const draftsRef = useRef<Map<string, Question>>(new Map());
-  const [resetSignal, setResetSignal] = useState(0);
-  const [pageDirty, setPageDirty] = useState(false);
+  /** Local drafts for NEW questions only (not yet saved to server) */
+  const [drafts, setDrafts] = useState<Question[]>([]);
 
   useEffect(() => {
     if (qid) dispatch(questionThunks.fetchByQuiz(qid));
+    setDrafts([]); // reset drafts if quiz changes
   }, [qid, dispatch]);
 
-  /** Called by each QuestionCard on edit start/stop or content change */
-  const registerDraft = (id: string, draft: Question | null) => {
-    const cache = draftsRef.current;
-    if (draft) cache.set(id, draft);
-    else cache.delete(id);
-    setPageDirty(cache.size > 0);
-  };
-
-  /** Header Cancel: discard local edits, stay on this page */
-  const handleHeaderCancel = () => {
-    draftsRef.current.clear();
-    setPageDirty(false);
-    setResetSignal((n) => n + 1); // tells cards to exit edit mode
-    if (qid) dispatch(questionThunks.fetchByQuiz(qid)); // reload pristine data
-  };
-
-  /** Save all pending drafts (no publish) */
-  const handleSaveAll = async () => {
-    const updates = Array.from(draftsRef.current.values());
-    if (updates.length > 0) {
-      await Promise.all(updates.map((q) => dispatch(questionThunks.updateQuestion(q))));
-    }
-    draftsRef.current.clear();
-    setPageDirty(false);
-    if (qid) dispatch(questionThunks.fetchByQuiz(qid));
-    setResetSignal((n) => n + 1);
-  };
-
-  /** Bottom Cancel: discard local edits and navigate back to quiz edit screen */
-  const handleBottomCancel = async () => {
-    // same discard behavior as header
-    draftsRef.current.clear();
-    setPageDirty(false);
-    setResetSignal((n) => n + 1);
-    if (qid) dispatch(questionThunks.fetchByQuiz(qid));
-    // then navigate back to the quiz's Details Editor page
-    navigate(`/Kambaz/Courses/${cid}/Quizzes/${qid}/edit`);
-  };
-
-  const totalPoints = useMemo(
-    () => (questions || []).reduce((sum, q) => sum + (Number(q.points) || 0), 0),
-    [questions]
-  );
-
+  /** Add a NEW question as a local draft (no API yet) */
   const addNew = () => {
     if (!qid) return;
-    const base = typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : Math.random().toString(36).slice(2);
-
-    dispatch(
-      questionThunks.createQuestion({
+    setDrafts((ds) => [
+      ...ds,
+      {
+        _id: `tmp-${uid()}`,
         quiz: qid,
         type: "MC",
         title: "New Question",
         points: 1,
         prompt: "<p></p>",
         choices: [
-          { _id: base + "-1", text: "Option 1", isCorrect: true },
-          { _id: base + "-2", text: "Option 2" },
+          { _id: uid(), text: "Option 1", isCorrect: true },
+          { _id: uid(), text: "Option 2" },
         ],
-      })
-    );
+      },
+    ]);
   };
 
-  const hasQuestions = (questions?.length ?? 0) > 0;
+  /** Footer Cancel: discard drafts and go back to Quiz Details editor */
+  const bottomCancel = () => {
+    setDrafts([]);
+    navigate(`/Kambaz/Courses/${cid}/Quizzes/${qid}/edit`);
+  };
+
+  /** Persist ALL local drafts as creates, then refresh */
+  const saveDrafts = async () => {
+    if (!qid || drafts.length === 0) return;
+    await Promise.all(
+      drafts.map((d) =>
+        dispatch(
+          questionThunks.createQuestion({
+            quiz: qid,
+            type: d.type,
+            title: d.title,
+            points: d.points,
+            prompt: d.prompt,
+            choices: d.choices,
+            answer: d.answer,
+            answers: d.answers,
+          } as any)
+        )
+      )
+    );
+    setDrafts([]);
+    dispatch(questionThunks.fetchByQuiz(qid));
+  };
+
+  /** When an individual card saves */
+  const handleCardSave = (q: Question) => {
+    if (isTemp(q._id)) {
+      // update the local draft only (not persisted until global Save)
+      setDrafts((ds) => ds.map((d) => (d._id === q._id ? q : d)));
+    } else {
+      // existing question -> save immediately to server
+      dispatch(questionThunks.updateQuestion(q));
+    }
+  };
+
+  /** When an individual card deletes */
+  const handleCardDelete = (id: string) => {
+    if (isTemp(id)) {
+      setDrafts((ds) => ds.filter((d) => d._id !== id));
+    } else {
+      dispatch(questionThunks.deleteQuestion(id));
+    }
+  };
+
+  /** Keep local draft in sync while user edits */
+  const handleDraftChange = (draft: Question | null, id: string) => {
+    if (!isTemp(id) || !draft) return;
+    setDrafts((ds) => ds.map((d) => (d._id === id ? { ...d, ...draft } : d)));
+  };
+
+  const rows: Question[] = [...drafts, ...(serverQuestions || [])];
+  const hasDrafts = drafts.length > 0;
+
+  const totalPoints = useMemo(() => {
+    const serverPts = (serverQuestions || []).reduce(
+      (a, q) => a + (Number(q.points) || 0),
+      0
+    );
+    const draftPts = drafts.reduce((a, q) => a + (Number(q.points) || 0), 0);
+    return serverPts + draftPts;
+  }, [serverQuestions, drafts]);
 
   return (
     <div className="p-3">
-      {/* Header row */}
+      {/* Header */}
       <div className="d-flex align-items-center mb-3">
         <h5 className="mb-0">Questions</h5>
         <div className="ms-3 text-secondary">Points: {totalPoints}</div>
 
-        {!pageDirty ? (
-          <Button className="ms-auto" variant="danger" size="sm" onClick={addNew}>
-            New Question
-          </Button>
-        ) : (
-          <div className="ms-auto d-flex gap-2">
-            <Button variant="secondary" size="sm" onClick={handleHeaderCancel}>
-              Cancel
-            </Button>
-            <Button variant="danger" size="sm" onClick={handleSaveAll}>
-              Save
-            </Button>
-          </div>
-        )}
+        {/* Always show New Question at the top */}
+        <Button className="ms-auto" variant="danger" size="sm" onClick={addNew}>
+          New Question
+        </Button>
       </div>
 
       {loading && <div className="text-secondary">Loading questions…</div>}
 
-      {/* When there are questions: render list */}
-      {hasQuestions && (
-        <ul className="list-group">
-          {questions.map((q) => (
-            <QuestionCard
-              key={q._id}
-              q={q}
-              onSave={(updated) => dispatch(questionThunks.updateQuestion(updated))}
-              onDelete={(id) => dispatch(questionThunks.deleteQuestion(id))}
-              resetSignal={resetSignal}                       // asks cards to exit edit
-              onDraftChange={(draft) => registerDraft(q._id, draft)} // track page dirty
-            />
-          ))}
-        </ul>
-      )}
+      {/* List */}
+      <ul className="list-group">
+        {rows.map((q) => (
+          <QuestionCard
+            key={q._id}
+            q={q}
+            onSave={handleCardSave}
+            onDelete={handleCardDelete}
+            // only sync drafts for temp items
+            onDraftChange={(d) => handleDraftChange(d as Question | null, q._id)}
+          />
+        ))}
+      </ul>
 
-      {/* When there are NO questions: mimic Canvas-like empty state */}
-      {!loading && !hasQuestions && (
+      {/* Empty-state center CTA when nothing at all */}
+      {!loading && rows.length === 0 && (
         <div className="text-center py-5">
           <Button variant="light" className="border px-4 py-2" onClick={addNew}>
             + New Question
@@ -156,17 +170,15 @@ export default function QuestionsTab() {
         </div>
       )}
 
-      {/* Footer controls (always visible once not loading) */}
-      {!loading && (
-        <div className="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
-          <Button variant="light" className="border" onClick={handleBottomCancel}>
-            Cancel
-          </Button>
-          <Button variant="danger" onClick={handleSaveAll} disabled={!pageDirty}>
-            Save
-          </Button>
-        </div>
-      )}
+      {/* Footer: the ONLY global Save/Cancel */}
+      <div className="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
+        <Button variant="light" className="border" onClick={bottomCancel}>
+          Cancel
+        </Button>
+        <Button variant="danger" onClick={saveDrafts} disabled={!hasDrafts}>
+          Save
+        </Button>
+      </div>
     </div>
   );
 }

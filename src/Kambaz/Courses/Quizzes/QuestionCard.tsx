@@ -1,8 +1,9 @@
 // src/Kambaz/Courses/Quizzes/QuestionCard.tsx
 import { useEffect, useMemo, useState } from "react";
 import { Button, Form, InputGroup } from "react-bootstrap";
+import { BsTrash, BsPlus } from "react-icons/bs";
 
-// ---------- Types (aligned with your server) ----------
+/* ---------- Types (aligned with your server) ---------- */
 type Choice = { _id: string; text: string; isCorrect?: boolean };
 
 export type Question = {
@@ -17,21 +18,15 @@ export type Question = {
   answers?: string[];  // FIB
 };
 
-// Props used by QuestionsTab
 export type QuestionCardProps = {
   q: Question;
   onSave: (q: Question) => void;
   onDelete: (id: string) => void;
-
-  // page-level Save/Cancel wiring:
-  // - when editing starts/changes, pass the draft object
-  // - when edit is abandoned or saved, pass null
   onDraftChange?: (draft: Question | null) => void;
-  // when this number changes, exit edit mode & reset
   resetSignal?: number;
 };
 
-// ---------- Tiny Tiptap (React 19 OK) ----------
+/* ---------- Tiny Tiptap (React 19 OK) ---------- */
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 
@@ -47,11 +42,7 @@ function RichTextEditor({
   const editor = useEditor({
     extensions: [StarterKit],
     content: value || "<p></p>",
-    editorProps: {
-      attributes: {
-        class: "form-control p-2 min-vh-25",
-      },
-    },
+    editorProps: { attributes: { class: "form-control p-2 min-vh-25" } },
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
   });
 
@@ -66,38 +57,14 @@ function RichTextEditor({
   return (
     <div className="border rounded">
       <div className="d-flex flex-wrap gap-2 p-2 border-bottom bg-light">
-        <Button
-          size="sm"
-          variant="light"
-          onClick={() => editor.chain().focus().toggleBold().run()}
-          aria-pressed={editor.isActive("bold")}
-        >
-          <b>B</b>
-        </Button>
-        <Button
-          size="sm"
-          variant="light"
-          onClick={() => editor.chain().focus().toggleItalic().run()}
-          aria-pressed={editor.isActive("italic")}
-        >
-          <i>I</i>
-        </Button>
-        <Button
-          size="sm"
-          variant="light"
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
-          aria-pressed={editor.isActive("bulletList")}
-        >
-          • List
-        </Button>
-        <Button
-          size="sm"
-          variant="light"
-          onClick={() => editor.chain().focus().toggleOrderedList().run()}
-          aria-pressed={editor.isActive("orderedList")}
-        >
-          1. List
-        </Button>
+        <Button size="sm" variant="light" onClick={() => editor.chain().focus().toggleBold().run()}
+                aria-pressed={editor.isActive("bold")}><b>B</b></Button>
+        <Button size="sm" variant="light" onClick={() => editor.chain().focus().toggleItalic().run()}
+                aria-pressed={editor.isActive("italic")}><i>I</i></Button>
+        <Button size="sm" variant="light" onClick={() => editor.chain().focus().toggleBulletList().run()}
+                aria-pressed={editor.isActive("bulletList")}>• List</Button>
+        <Button size="sm" variant="light" onClick={() => editor.chain().focus().toggleOrderedList().run()}
+                aria-pressed={editor.isActive("orderedList")}>1. List</Button>
         <span className="ms-auto text-secondary small">{placeholder}</span>
       </div>
       <EditorContent editor={editor} />
@@ -105,29 +72,38 @@ function RichTextEditor({
   );
 }
 
-// ---------- Helpers ----------
+/* ---------- Helpers ---------- */
 const rid = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2);
 
-// Ensure draft fields exist for each type
 function normalizeForType(q: Question): Question {
   if (q.type === "MC") {
-    const base = q.choices && q.choices.length >= 2 ? q.choices : [
-      { _id: rid(), text: "Option 1", isCorrect: true },
-      { _id: rid(), text: "Option 2" },
-    ];
+    const base =
+      q.choices && q.choices.length >= 2
+        ? q.choices
+        : [
+            { _id: rid(), text: "Option 1", isCorrect: true },
+            { _id: rid(), text: "Option 2" },
+          ];
+    // ensure exactly one correct
+    const anyCorrect = base.some(c => c.isCorrect);
+    if (!anyCorrect) base[0].isCorrect = true;
     return { ...q, choices: base, answer: undefined, answers: undefined };
   }
   if (q.type === "TF") {
     return { ...q, answer: q.answer ?? false, choices: undefined, answers: undefined };
   }
-  // FIB
-  return { ...q, answers: q.answers?.length ? q.answers : [""], choices: undefined, answer: undefined };
+  return {
+    ...q,
+    answers: q.answers?.length ? q.answers : [""],
+    choices: undefined,
+    answer: undefined,
+  };
 }
 
-// ================== Component ==================
+/* ================== Component ================== */
 export default function QuestionCard({
   q,
   onSave,
@@ -135,10 +111,9 @@ export default function QuestionCard({
   onDraftChange,
   resetSignal,
 }: QuestionCardProps) {
-  const [editing, setEditing] = useState(!q._id); // new items start in edit mode
+  const [editing, setEditing] = useState(!q._id);
   const [draft, setDraft] = useState<Question>(normalizeForType(q));
 
-  // keep draft in sync when parent updates q (or asks to reset)
   useEffect(() => {
     setEditing(false);
     setDraft(normalizeForType(q));
@@ -146,18 +121,46 @@ export default function QuestionCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q._id, resetSignal]);
 
-  // bubble draft changes up so page-level Save/Cancel can track "dirty"
   useEffect(() => {
     if (editing) onDraftChange?.(draft);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing, draft]);
 
-  // When type changes, normalize appropriate fields
   useEffect(() => {
-    setDraft((d) => normalizeForType(d));
-  }, [draft.type]); // intentional: uses latest state
+    setDraft(d => normalizeForType(d));
+  }, [draft.type]);
 
-  // ----- Body editors by type -----
+  /* ---------- MC editor helpers ---------- */
+  const setCorrect = (choiceId: string) => {
+    if (!draft.choices) return;
+    setDraft({
+      ...draft,
+      choices: draft.choices.map(c => ({ ...c, isCorrect: c._id === choiceId })),
+    });
+  };
+
+  const updateChoiceText = (choiceId: string, text: string) => {
+    if (!draft.choices) return;
+    setDraft({
+      ...draft,
+      choices: draft.choices.map(c => (c._id === choiceId ? { ...c, text } : c)),
+    });
+  };
+
+  const removeChoice = (choiceId: string) => {
+    if (!draft.choices) return;
+    const next = draft.choices.filter(c => c._id !== choiceId);
+    // keep at least 2; and if we deleted the correct one, make the first correct
+    if (next.length >= 2 && !next.some(c => c.isCorrect)) next[0].isCorrect = true;
+    setDraft({ ...draft, choices: next.length >= 2 ? next : draft.choices });
+  };
+
+  const addChoice = () => {
+    const next = [...(draft.choices ?? []), { _id: rid(), text: "" }];
+    setDraft({ ...draft, choices: next });
+  };
+
+  /* ---------- Body by type ---------- */
   const body = useMemo(() => {
     if (!editing) {
       return (
@@ -186,13 +189,17 @@ export default function QuestionCard({
       );
     }
 
-    // EDITING UI
+    /* -------- Multiple Choice (improved) -------- */
     if (draft.type === "MC") {
       const choices = draft.choices ?? [];
       return (
         <>
+          <div className="text-secondary small mb-2">
+            Enter your question and multiple answers, then select the one correct answer.
+          </div>
+
           <Form.Group className="mb-2">
-            <Form.Label>Prompt</Form.Label>
+            <Form.Label className="fw-semibold">Question:</Form.Label>
             <RichTextEditor
               value={draft.prompt || "<p></p>"}
               onChange={(html) => setDraft({ ...draft, prompt: html })}
@@ -200,60 +207,66 @@ export default function QuestionCard({
             />
           </Form.Group>
 
-          <Form.Label className="mt-3">Choices</Form.Label>
+          <div className="fw-semibold mt-3 mb-2">Answers:</div>
+
           <div className="d-flex flex-column gap-2">
-            {choices.map((c, idx) => (
-              <InputGroup key={c._id}>
-                <InputGroup.Checkbox
-                  checked={!!c.isCorrect}
-                  onChange={(e) =>
-                    setDraft({
-                      ...draft,
-                      choices: choices.map((x) =>
-                        x._id === c._id ? { ...x, isCorrect: e.currentTarget.checked } : x
-                      ),
-                    })
-                  }
-                  title="Mark as correct"
-                />
-                <Form.Control
-                  placeholder={`Choice ${idx + 1}`}
-                  value={c.text}
-                  onChange={(e) =>
-                    setDraft({
-                      ...draft,
-                      choices: choices.map((x) =>
-                        x._id === c._id ? { ...x, text: e.target.value } : x
-                      ),
-                    })
-                  }
-                />
-                <Button
-                  variant="outline-danger"
-                  onClick={() =>
-                    setDraft({
-                      ...draft,
-                      choices: choices.filter((x) => x._id !== c._id),
-                    })
-                  }
-                  disabled={choices.length <= 2}
-                >
-                  Remove
-                </Button>
-              </InputGroup>
-            ))}
-            <div>
+            {choices.map((c, idx) => {
+              const radioName = `mc-correct-${draft._id || "new"}`;
+              const label = c.isCorrect ? "Correct Answer" : "Possible Answer";
+              return (
+                <div key={c._id} className="p-2 border rounded bg-white">
+                  <div className="d-flex align-items-center mb-2">
+                    <Form.Check
+                      type="radio"
+                      name={radioName}
+                      className="me-2"
+                      checked={!!c.isCorrect}
+                      onChange={() => setCorrect(c._id)}
+                    />
+                    <span className={c.isCorrect ? "text-success fw-semibold" : "text-secondary"}>
+                      {label}
+                    </span>
+                    <div className="ms-auto d-flex align-items-center gap-2">
+                      <span className="text-secondary small">Choice {idx + 1}</span>
+                      <Button
+                        variant="outline-secondary"
+                        size="sm"
+                        onClick={() => updateChoiceText(c._id, "")}
+                        title="Clear"
+                      >
+                        <BsPlus style={{ transform: "rotate(45deg)" }} />
+                      </Button>
+                      <Button
+                        variant="outline-danger"
+                        size="sm"
+                        onClick={() => removeChoice(c._id)}
+                        disabled={choices.length <= 2}
+                        title="Delete choice"
+                      >
+                        <BsTrash />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <Form.Control
+                    as="textarea"
+                    rows={1}
+                    placeholder={`Answer text…`}
+                    value={c.text}
+                    onChange={(e) => updateChoiceText(c._id, e.target.value)}
+                  />
+                </div>
+              );
+            })}
+
+            <div className="mt-1">
               <Button
                 size="sm"
                 variant="outline-secondary"
-                onClick={() =>
-                  setDraft({
-                    ...draft,
-                    choices: [...choices, { _id: rid(), text: "" }],
-                  })
-                }
+                onClick={addChoice}
+                className="d-inline-flex align-items-center"
               >
-                + Add choice
+                <BsPlus className="me-1" /> Add Another Answer
               </Button>
             </div>
           </div>
@@ -261,18 +274,18 @@ export default function QuestionCard({
       );
     }
 
+    /* -------- True/False -------- */
     if (draft.type === "TF") {
       return (
         <>
           <Form.Group className="mb-2">
-            <Form.Label>Prompt</Form.Label>
+            <Form.Label>Question:</Form.Label>
             <RichTextEditor
               value={draft.prompt || "<p></p>"}
               onChange={(html) => setDraft({ ...draft, prompt: html })}
               placeholder="True/False statement…"
             />
           </Form.Group>
-
           <Form.Group className="mt-3">
             <Form.Label>Correct answer</Form.Label>
             <div className="d-flex gap-3">
@@ -296,12 +309,12 @@ export default function QuestionCard({
       );
     }
 
-    // FIB
+    /* -------- Fill in the Blank -------- */
     const answers = draft.answers ?? [""];
     return (
       <>
         <Form.Group className="mb-2">
-          <Form.Label>Prompt</Form.Label>
+          <Form.Label>Question:</Form.Label>
           <RichTextEditor
             value={draft.prompt || "<p></p>"}
             onChange={(html) => setDraft({ ...draft, prompt: html })}
@@ -348,7 +361,7 @@ export default function QuestionCard({
     );
   }, [editing, draft, q]);
 
-  // ---------- Render ----------
+  /* ---------- Render ---------- */
   return (
     <li className="list-group-item mb-3">
       {/* Header row */}
@@ -426,8 +439,7 @@ export default function QuestionCard({
               <Button
                 variant="danger"
                 onClick={() => {
-                  // final normalization before save
-                  const normalized = normalizeForType(draft);
+                  const normalized = normalizeForType(draft); // ensure one correct, min 2
                   onSave(normalized);
                   setEditing(false);
                   onDraftChange?.(null);
