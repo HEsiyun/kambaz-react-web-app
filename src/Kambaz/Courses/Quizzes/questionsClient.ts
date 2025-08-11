@@ -1,17 +1,16 @@
+// src/Kambaz/Courses/Quizzes/questionsClient.ts
 import axios from "axios";
 
 const HTTP_SERVER =
   (import.meta as any).env?.VITE_HTTP_SERVER ?? "http://localhost:4000";
 
-const api = axios.create({
-  baseURL: HTTP_SERVER,
-  withCredentials: true,
-});
+const api = axios.create({ baseURL: HTTP_SERVER, withCredentials: true });
 
 export type Choice = { _id?: string; text: string; isCorrect?: boolean };
+
 export type Question = {
   _id: string;
-  quiz: string;                        // quiz id
+  quiz: string;
   type: "MC" | "TF" | "FIB";
   title: string;
   points: number;
@@ -19,9 +18,9 @@ export type Question = {
   // MC
   choices?: Choice[];
   // TF
-  correctBoolean?: boolean;
+  answer?: boolean;           // <<< was correctBoolean
   // FIB
-  acceptableAnswers?: string[];
+  answers?: string[];         // <<< was acceptableAnswers
 };
 
 export const findByQuiz = async (qid: string): Promise<Question[]> =>
