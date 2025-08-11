@@ -1,15 +1,14 @@
 // src/Kambaz/Courses/Quizzes/QuestionsTab.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router";
+import { useNavigate, useParams } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { Button } from "react-bootstrap";
 import type { RootState, AppDispatch } from "../../store";
-import { questionThunks } from "./questionsReducer"; // <<< make sure this name matches your export
+import { questionThunks } from "./questionsReducer";
 import QuestionCard from "./QuestionCard";
 
-/* ---------- Types that match your backend ---------- */
+/** Keep types aligned with your server & questionsClient */
 type Choice = { _id: string; text: string; isCorrect?: boolean };
-
 export type Question = {
   _id: string;
   quiz: string;
@@ -23,14 +22,15 @@ export type Question = {
 };
 
 export default function QuestionsTab() {
-  const { qid } = useParams();
+  const { cid, qid } = useParams(); // route: /Kambaz/Courses/:cid/Quizzes/:qid/questions (or /edit taps into this tab)
+  const navigate = useNavigate();
   const dispatch = useDispatch<AppDispatch>();
 
   const { items: questions, loading } = useSelector(
     (s: RootState) => s.questionsReducer
   ) as { items: Question[]; loading: boolean };
 
-  // Track drafts across cards for page-level Save/Cancel
+  /** Track drafts across cards to enable page-level Save/Cancel */
   const draftsRef = useRef<Map<string, Question>>(new Map());
   const [resetSignal, setResetSignal] = useState(0);
   const [pageDirty, setPageDirty] = useState(false);
@@ -39,7 +39,7 @@ export default function QuestionsTab() {
     if (qid) dispatch(questionThunks.fetchByQuiz(qid));
   }, [qid, dispatch]);
 
-  // Called by each QuestionCard on edit start/stop or changes
+  /** Called by each QuestionCard on edit start/stop or content change */
   const registerDraft = (id: string, draft: Question | null) => {
     const cache = draftsRef.current;
     if (draft) cache.set(id, draft);
@@ -47,20 +47,35 @@ export default function QuestionsTab() {
     setPageDirty(cache.size > 0);
   };
 
-  const handlePageCancel = () => {
+  /** Header Cancel: discard local edits, stay on this page */
+  const handleHeaderCancel = () => {
     draftsRef.current.clear();
     setPageDirty(false);
-    setResetSignal((n) => n + 1); // tell cards to exit edit mode
-    if (qid) dispatch(questionThunks.fetchByQuiz(qid)); // reload from server
+    setResetSignal((n) => n + 1); // tells cards to exit edit mode
+    if (qid) dispatch(questionThunks.fetchByQuiz(qid)); // reload pristine data
   };
 
-  const handlePageSave = async () => {
+  /** Save all pending drafts (no publish) */
+  const handleSaveAll = async () => {
     const updates = Array.from(draftsRef.current.values());
-    await Promise.all(updates.map((q) => dispatch(questionThunks.updateQuestion(q))));
+    if (updates.length > 0) {
+      await Promise.all(updates.map((q) => dispatch(questionThunks.updateQuestion(q))));
+    }
     draftsRef.current.clear();
     setPageDirty(false);
     if (qid) dispatch(questionThunks.fetchByQuiz(qid));
     setResetSignal((n) => n + 1);
+  };
+
+  /** Bottom Cancel: discard local edits and navigate back to quiz edit screen */
+  const handleBottomCancel = async () => {
+    // same discard behavior as header
+    draftsRef.current.clear();
+    setPageDirty(false);
+    setResetSignal((n) => n + 1);
+    if (qid) dispatch(questionThunks.fetchByQuiz(qid));
+    // then navigate back to the quiz's Details Editor page
+    navigate(`/Kambaz/Courses/${cid}/Quizzes/${qid}/edit`);
   };
 
   const totalPoints = useMemo(
@@ -70,29 +85,30 @@ export default function QuestionsTab() {
 
   const addNew = () => {
     if (!qid) return;
-    const rid =
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : Math.random().toString(36).slice(2);
+    const base = typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2);
 
     dispatch(
       questionThunks.createQuestion({
         quiz: qid,
-        type: "MC", // <-- matches backend
+        type: "MC",
         title: "New Question",
         points: 1,
         prompt: "<p></p>",
         choices: [
-          { _id: rid + "-1", text: "Option 1", isCorrect: true },
-          { _id: rid + "-2", text: "Option 2" },
+          { _id: base + "-1", text: "Option 1", isCorrect: true },
+          { _id: base + "-2", text: "Option 2" },
         ],
       })
     );
   };
 
+  const hasQuestions = (questions?.length ?? 0) > 0;
+
   return (
     <div className="p-3">
-      {/* Header */}
+      {/* Header row */}
       <div className="d-flex align-items-center mb-3">
         <h5 className="mb-0">Questions</h5>
         <div className="ms-3 text-secondary">Points: {totalPoints}</div>
@@ -103,10 +119,10 @@ export default function QuestionsTab() {
           </Button>
         ) : (
           <div className="ms-auto d-flex gap-2">
-            <Button variant="secondary" size="sm" onClick={handlePageCancel}>
+            <Button variant="secondary" size="sm" onClick={handleHeaderCancel}>
               Cancel
             </Button>
-            <Button variant="danger" size="sm" onClick={handlePageSave}>
+            <Button variant="danger" size="sm" onClick={handleSaveAll}>
               Save
             </Button>
           </div>
@@ -115,36 +131,40 @@ export default function QuestionsTab() {
 
       {loading && <div className="text-secondary">Loading questions…</div>}
 
-      <ul className="list-group">
-        {(questions || []).map((q) => (
-          <QuestionCard
-            key={q._id}
-            q={q}
-            onSave={(updated) => dispatch(questionThunks.updateQuestion(updated))}
-            onDelete={(id) => dispatch(questionThunks.deleteQuestion(id))}
-            resetSignal={resetSignal}                 // tells cards to exit edit mode
-            onDraftChange={(draft) => registerDraft(q._id, draft)} // page-level tracking
-          />
-        ))}
-      </ul>
+      {/* When there are questions: render list */}
+      {hasQuestions && (
+        <ul className="list-group">
+          {questions.map((q) => (
+            <QuestionCard
+              key={q._id}
+              q={q}
+              onSave={(updated) => dispatch(questionThunks.updateQuestion(updated))}
+              onDelete={(id) => dispatch(questionThunks.deleteQuestion(id))}
+              resetSignal={resetSignal}                       // asks cards to exit edit
+              onDraftChange={(draft) => registerDraft(q._id, draft)} // track page dirty
+            />
+          ))}
+        </ul>
+      )}
 
-      {/* Bottom controls for long pages */}
-      {(questions || []).length > 0 && (
-        <div className="d-flex justify-content-end gap-2 mt-3">
-          {pageDirty ? (
-            <>
-              <Button variant="secondary" onClick={handlePageCancel}>
-                Cancel
-              </Button>
-              <Button variant="danger" onClick={handlePageSave}>
-                Save
-              </Button>
-            </>
-          ) : (
-            <Button variant="danger" onClick={addNew}>
-              New Question
-            </Button>
-          )}
+      {/* When there are NO questions: mimic Canvas-like empty state */}
+      {!loading && !hasQuestions && (
+        <div className="text-center py-5">
+          <Button variant="light" className="border px-4 py-2" onClick={addNew}>
+            + New Question
+          </Button>
+        </div>
+      )}
+
+      {/* Footer controls (always visible once not loading) */}
+      {!loading && (
+        <div className="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
+          <Button variant="light" className="border" onClick={handleBottomCancel}>
+            Cancel
+          </Button>
+          <Button variant="danger" onClick={handleSaveAll} disabled={!pageDirty}>
+            Save
+          </Button>
         </div>
       )}
     </div>

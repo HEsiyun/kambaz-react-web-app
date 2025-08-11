@@ -52,8 +52,7 @@ export default function QuizEditor() {
   // form state
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [type, setType] =
-    useState<NonNullable<Quiz["type"]>>("GRADED_QUIZ");
+  const [type, setType] = useState<NonNullable<Quiz["type"]>>("GRADED_QUIZ");
   const [group, setGroup] =
     useState<NonNullable<Quiz["assignmentGroup"]>>("Quizzes");
 
@@ -167,6 +166,11 @@ export default function QuizEditor() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleCancel = () => {
+    // Always go back to the course's quiz list (not browser back)
+    navigate(`/Kambaz/Courses/${cid}/Quizzes`);
   };
 
   if (loading) {
@@ -391,7 +395,7 @@ export default function QuizEditor() {
           <Button
             variant="light"
             className="border"
-            onClick={() => navigate(-1)}
+            onClick={handleCancel}
             disabled={saving}
           >
             Cancel
