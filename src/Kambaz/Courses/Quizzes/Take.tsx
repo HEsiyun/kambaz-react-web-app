@@ -1,4 +1,3 @@
-// src/Kambaz/Courses/Quizzes/Take.tsx
 import { useEffect, useMemo, useState } from "react";
 import { Button, Form, Spinner, Alert } from "react-bootstrap";
 import { Link, useParams } from "react-router-dom";
@@ -34,9 +33,9 @@ type Question = {
   prompt?: string;
   // MC
   choices?: Choice[];
-  // TF (client uses `answer`, server sends `correctBoolean`)
+  // TF
   answer?: boolean;
-  // FIB (client uses `answers`, server sends `acceptableAnswers`)
+  // FIB
   answers?: string[];
 };
 
@@ -63,8 +62,7 @@ const fmt = (d: string) =>
 export default function TakeQuiz() {
   const { cid, qid } = useParams();
   const currentUser = useSelector(
-    (s: RootState) =>
-      s.accountReducer.currentUser as { _id?: string; role?: string } | null
+    (s: RootState) => s.accountReducer.currentUser as { _id?: string; role?: string } | null
   );
 
   const [loading, setLoading] = useState(true);
@@ -79,9 +77,7 @@ export default function TakeQuiz() {
   } | null>(null);
   const [attemptsUsed, setAttemptsUsed] = useState<number>(0);
   const [submitting, setSubmitting] = useState(false);
-
-  // One-question-at-a-time pager
-  const [qIndex, setQIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(0);
 
   // Load quiz + questions + last attempt
   useEffect(() => {
@@ -97,7 +93,6 @@ export default function TakeQuiz() {
         setQuiz(qz);
         setQuestions(qs);
 
-        // previous attempts info (tolerate 401 -> null)
         const [last, allMine] = await Promise.all([
           getMyLastAttempt(qid!, currentUser?._id),
           listMyAttempts(qid!, currentUser?._id).catch(() => [] as any[]),
@@ -116,12 +111,6 @@ export default function TakeQuiz() {
     };
   }, [qid, currentUser?._id]);
 
-  // Reset pager whenever quiz/attempt state changes
-  useEffect(() => {
-    setQIndex(0);
-  }, [qid, questions.length, !!lastAttempt]);
-
-  // Attempts remaining logic
   const attemptsInfo = useMemo(() => {
     const s = quiz?.settings || {};
     const enabled = !!s.multipleAttempts;
@@ -131,18 +120,10 @@ export default function TakeQuiz() {
     return { enabled, allowed: max, remaining };
   }, [quiz, attemptsUsed]);
 
-  // Whether inputs should be disabled (viewing last attempt and no more attempts)
   const viewOnly = !!lastAttempt && attemptsInfo.remaining === 0;
 
-  // One-at-a-time is only active while taking (not while reviewing)
-  const oneAtATime = !!quiz?.settings?.oneQuestionAtATime && !lastAttempt;
-
-  // Answers being shown (live or from last attempt)
-  const currentAnswers = lastAttempt?.answersByQid ?? answers;
-
-  // Helpers
-  const setAns = (questionId: string, value: any) =>
-    setAnswers((a) => ({ ...a, [questionId]: value }));
+  const setAns = (qid: string, value: any) =>
+    setAnswers((a) => ({ ...a, [qid]: value }));
 
   const isCorrect = (q: Question, val: any) => {
     if (q.type === "MC") {
@@ -150,21 +131,13 @@ export default function TakeQuiz() {
       return val === correct?._id || val === correct?.text;
     }
     if (q.type === "TF") {
-      const right = (q as any).correctBoolean; // server field
-      return Boolean(val) === Boolean(right);
+      return Boolean(val) === Boolean(q.answer);
     }
     const accepted = normalizeFibList(q).map((s) => s.toLowerCase().trim());
     return accepted.includes(String(val ?? "").toLowerCase().trim());
   };
 
-  const scoreNow = useMemo(() => {
-    if (!questions.length) return 0;
-    let s = 0;
-    for (const q of questions) {
-      if (isCorrect(q, currentAnswers[q._id])) s += Number(q.points) || 0;
-    }
-    return s;
-  }, [questions, currentAnswers]);
+  const currentAnswers = lastAttempt?.answersByQid ?? answers;
 
   const submit = async () => {
     try {
@@ -197,21 +170,15 @@ export default function TakeQuiz() {
     return <div className="p-3 text-danger">Quiz not found.</div>;
   }
 
-  // Which questions should be visible on screen
-  const visibleQuestions = oneAtATime
-    ? questions.slice(qIndex, qIndex + 1)
-    : questions;
+  const oneAtATime = quiz.settings?.oneQuestionAtATime;
+  const visibleQuestions = oneAtATime ? [questions[currentIndex]] : questions;
 
   return (
     <div className="p-3" style={{ maxWidth: 900 }}>
       <h4 className="mb-3">{quiz.title}</h4>
 
-      {/* Status banner */}
       {!!lastAttempt && (
-        <Alert
-          variant="light"
-          className="border d-flex justify-content-between align-items-center"
-        >
+        <Alert variant="light" className="border d-flex justify-content-between align-items-center">
           <div>
             <div className="fw-semibold">Last attempt</div>
             <div className="text-secondary small">
@@ -231,11 +198,10 @@ export default function TakeQuiz() {
         </Alert>
       )}
 
-      {/* Questions */}
-      <ol className="ps-3" start={oneAtATime ? qIndex + 1 : 1}>
+      <ol className="ps-3">
         {visibleQuestions.map((q) => {
           const ans = currentAnswers[q._id];
-          const showCheck = !!lastAttempt; // highlight correctness after an attempt
+          const showCheck = !!lastAttempt;
           const correct = showCheck ? isCorrect(q, ans) : undefined;
 
           return (
@@ -250,12 +216,8 @@ export default function TakeQuiz() {
                     : "transparent",
                 }}
               >
-                {/* Prompt */}
-                {q.prompt && (
-                  <div dangerouslySetInnerHTML={{ __html: q.prompt }} />
-                )}
+                {q.prompt && <div dangerouslySetInnerHTML={{ __html: q.prompt }} />}
 
-                {/* MC */}
                 {q.type === "MC" && (
                   <div className="mt-2 d-flex flex-column gap-2">
                     {(q.choices ?? []).map((c) => (
@@ -272,7 +234,6 @@ export default function TakeQuiz() {
                   </div>
                 )}
 
-                {/* TF */}
                 {q.type === "TF" && (
                   <div className="mt-2 d-flex gap-4">
                     <Form.Check
@@ -294,7 +255,6 @@ export default function TakeQuiz() {
                   </div>
                 )}
 
-                {/* FIB */}
                 {q.type === "FIB" && (
                   <div className="mt-2" style={{ maxWidth: 360 }}>
                     <Form.Control
@@ -305,20 +265,14 @@ export default function TakeQuiz() {
                     />
                     {showCheck && (
                       <div className="small text-secondary mt-2">
-                        Accepted answers:{" "}
-                        {normalizeFibList(q).join(", ") || "—"}
+                        Accepted answers: {normalizeFibList(q).join(", ") || "—"}
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* Correctness label */}
                 {showCheck && (
-                  <div
-                    className={`mt-2 small ${
-                      correct ? "text-success" : "text-danger"
-                    }`}
-                  >
+                  <div className={`mt-2 small ${correct ? "text-success" : "text-danger"}`}>
                     {correct ? "Correct" : "Incorrect"}
                   </div>
                 )}
@@ -328,7 +282,6 @@ export default function TakeQuiz() {
         })}
       </ol>
 
-      {/* Footer actions */}
       <div className="d-flex justify-content-between align-items-center mt-4 pt-3 border-top">
         <Link
           to={`/Kambaz/Courses/${cid}/Quizzes/${qid}`}
@@ -337,44 +290,19 @@ export default function TakeQuiz() {
           Back to Quiz
         </Link>
 
-        {/* Taking, one-at-a-time: show pager + submit only at last question */}
-        {!lastAttempt && oneAtATime ? (
-          <div className="d-flex align-items-center gap-2">
-            <Button
-              variant="light"
-              className="border"
-              disabled={qIndex <= 0}
-              onClick={() => setQIndex((i) => Math.max(0, i - 1))}
-            >
+        <div className="d-flex gap-2">
+          {oneAtATime && currentIndex > 0 && (
+            <Button variant="secondary" onClick={() => setCurrentIndex((i) => i - 1)}>
               Previous
             </Button>
-            <Button
-              variant="light"
-              className="border"
-              disabled={qIndex >= questions.length - 1}
-              onClick={() =>
-                setQIndex((i) => Math.min(questions.length - 1, i + 1))
-              }
-            >
+          )}
+          {oneAtATime && currentIndex < questions.length - 1 && (
+            <Button variant="secondary" onClick={() => setCurrentIndex((i) => i + 1)}>
               Next
             </Button>
-            <Button
-              variant="danger"
-              disabled={submitting || qIndex < questions.length - 1}
-              onClick={submit}
-              title={
-                qIndex < questions.length - 1
-                  ? "Go to the last question to submit"
-                  : "Submit your attempt"
-              }
-            >
-              {submitting ? "Submitting…" : "Submit Quiz"}
-            </Button>
-          </div>
-        ) : (
-          // Not one-at-a-time (or reviewing): original buttons
-          <>
-            {attemptsInfo.remaining === 0 && !!lastAttempt ? (
+          )}
+          {(!oneAtATime || currentIndex === questions.length - 1) &&
+            (attemptsInfo.remaining === 0 && !!lastAttempt ? (
               <div className="text-secondary">No attempts remaining.</div>
             ) : !!lastAttempt ? (
               <Button
@@ -382,7 +310,7 @@ export default function TakeQuiz() {
                 onClick={() => {
                   setAnswers({});
                   setLastAttempt(null);
-                  setQIndex(0);
+                  setCurrentIndex(0);
                   window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
               >
@@ -397,17 +325,9 @@ export default function TakeQuiz() {
               >
                 {submitting ? "Submitting…" : "Submit Quiz"}
               </Button>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* Live score preview while filling (optional) */}
-      {!lastAttempt && Object.keys(answers).length > 0 && (
-        <div className="text-secondary small mt-2">
-          Current score with selected answers: <b>{scoreNow}</b>
+            ))}
         </div>
-      )}
+      </div>
     </div>
   );
 }
