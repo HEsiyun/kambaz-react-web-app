@@ -34,9 +34,9 @@ type Question = {
   prompt?: string;
   // MC
   choices?: Choice[];
-  // TF
+  // TF (client uses `answer`, server sends `correctBoolean`)
   answer?: boolean;
-  // FIB (client name) – server may send acceptableAnswers instead
+  // FIB (client uses `answers`, server sends `acceptableAnswers`)
   answers?: string[];
 };
 
@@ -63,7 +63,8 @@ const fmt = (d: string) =>
 export default function TakeQuiz() {
   const { cid, qid } = useParams();
   const currentUser = useSelector(
-    (s: RootState) => s.accountReducer.currentUser as { _id?: string; role?: string } | null
+    (s: RootState) =>
+      s.accountReducer.currentUser as { _id?: string; role?: string } | null
   );
 
   const [loading, setLoading] = useState(true);
@@ -79,7 +80,10 @@ export default function TakeQuiz() {
   const [attemptsUsed, setAttemptsUsed] = useState<number>(0);
   const [submitting, setSubmitting] = useState(false);
 
-  // Load quiz + questions + last attempt (tolerate unauthenticated last-attempt)
+  // One-question-at-a-time pager
+  const [qIndex, setQIndex] = useState(0);
+
+  // Load quiz + questions + last attempt
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -112,6 +116,11 @@ export default function TakeQuiz() {
     };
   }, [qid, currentUser?._id]);
 
+  // Reset pager whenever quiz/attempt state changes
+  useEffect(() => {
+    setQIndex(0);
+  }, [qid, questions.length, !!lastAttempt]);
+
   // Attempts remaining logic
   const attemptsInfo = useMemo(() => {
     const s = quiz?.settings || {};
@@ -125,8 +134,15 @@ export default function TakeQuiz() {
   // Whether inputs should be disabled (viewing last attempt and no more attempts)
   const viewOnly = !!lastAttempt && attemptsInfo.remaining === 0;
 
-  const setAns = (qid: string, value: any) =>
-    setAnswers((a) => ({ ...a, [qid]: value }));
+  // One-at-a-time is only active while taking (not while reviewing)
+  const oneAtATime = !!quiz?.settings?.oneQuestionAtATime && !lastAttempt;
+
+  // Answers being shown (live or from last attempt)
+  const currentAnswers = lastAttempt?.answersByQid ?? answers;
+
+  // Helpers
+  const setAns = (questionId: string, value: any) =>
+    setAnswers((a) => ({ ...a, [questionId]: value }));
 
   const isCorrect = (q: Question, val: any) => {
     if (q.type === "MC") {
@@ -134,14 +150,12 @@ export default function TakeQuiz() {
       return val === correct?._id || val === correct?.text;
     }
     if (q.type === "TF") {
-      const right = (q as any).correctBoolean;   // <-- use server field
+      const right = (q as any).correctBoolean; // server field
       return Boolean(val) === Boolean(right);
     }
     const accepted = normalizeFibList(q).map((s) => s.toLowerCase().trim());
     return accepted.includes(String(val ?? "").toLowerCase().trim());
   };
-
-  const currentAnswers = lastAttempt?.answersByQid ?? answers;
 
   const scoreNow = useMemo(() => {
     if (!questions.length) return 0;
@@ -183,13 +197,21 @@ export default function TakeQuiz() {
     return <div className="p-3 text-danger">Quiz not found.</div>;
   }
 
+  // Which questions should be visible on screen
+  const visibleQuestions = oneAtATime
+    ? questions.slice(qIndex, qIndex + 1)
+    : questions;
+
   return (
     <div className="p-3" style={{ maxWidth: 900 }}>
       <h4 className="mb-3">{quiz.title}</h4>
 
       {/* Status banner */}
       {!!lastAttempt && (
-        <Alert variant="light" className="border d-flex justify-content-between align-items-center">
+        <Alert
+          variant="light"
+          className="border d-flex justify-content-between align-items-center"
+        >
           <div>
             <div className="fw-semibold">Last attempt</div>
             <div className="text-secondary small">
@@ -210,8 +232,8 @@ export default function TakeQuiz() {
       )}
 
       {/* Questions */}
-      <ol className="ps-3">
-        {questions.map((q, _idx) => {
+      <ol className="ps-3" start={oneAtATime ? qIndex + 1 : 1}>
+        {visibleQuestions.map((q) => {
           const ans = currentAnswers[q._id];
           const showCheck = !!lastAttempt; // highlight correctness after an attempt
           const correct = showCheck ? isCorrect(q, ans) : undefined;
@@ -228,10 +250,12 @@ export default function TakeQuiz() {
                     : "transparent",
                 }}
               >
-                {/* prompt */}
-                {q.prompt && <div dangerouslySetInnerHTML={{ __html: q.prompt }} />}
+                {/* Prompt */}
+                {q.prompt && (
+                  <div dangerouslySetInnerHTML={{ __html: q.prompt }} />
+                )}
 
-                {/* type renderers */}
+                {/* MC */}
                 {q.type === "MC" && (
                   <div className="mt-2 d-flex flex-column gap-2">
                     {(q.choices ?? []).map((c) => (
@@ -248,6 +272,7 @@ export default function TakeQuiz() {
                   </div>
                 )}
 
+                {/* TF */}
                 {q.type === "TF" && (
                   <div className="mt-2 d-flex gap-4">
                     <Form.Check
@@ -269,6 +294,7 @@ export default function TakeQuiz() {
                   </div>
                 )}
 
+                {/* FIB */}
                 {q.type === "FIB" && (
                   <div className="mt-2" style={{ maxWidth: 360 }}>
                     <Form.Control
@@ -279,15 +305,20 @@ export default function TakeQuiz() {
                     />
                     {showCheck && (
                       <div className="small text-secondary mt-2">
-                        Accepted answers: {normalizeFibList(q).join(", ") || "—"}
+                        Accepted answers:{" "}
+                        {normalizeFibList(q).join(", ") || "—"}
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* correctness label */}
+                {/* Correctness label */}
                 {showCheck && (
-                  <div className={`mt-2 small ${correct ? "text-success" : "text-danger"}`}>
+                  <div
+                    className={`mt-2 small ${
+                      correct ? "text-success" : "text-danger"
+                    }`}
+                  >
                     {correct ? "Correct" : "Incorrect"}
                   </div>
                 )}
@@ -306,30 +337,68 @@ export default function TakeQuiz() {
           Back to Quiz
         </Link>
 
-        {/* Submit / Retake logic */}
-        {attemptsInfo.remaining === 0 && !!lastAttempt ? (
-          <div className="text-secondary">No attempts remaining.</div>
-        ) : !!lastAttempt ? (
-          <Button
-            variant="danger"
-            onClick={() => {
-              // clear previous answers to allow fresh retake
-              setAnswers({});
-              setLastAttempt(null);
-              window.scrollTo({ top: 0, behavior: "smooth" });
-            }}
-          >
-            Retake Quiz
-          </Button>
+        {/* Taking, one-at-a-time: show pager + submit only at last question */}
+        {!lastAttempt && oneAtATime ? (
+          <div className="d-flex align-items-center gap-2">
+            <Button
+              variant="light"
+              className="border"
+              disabled={qIndex <= 0}
+              onClick={() => setQIndex((i) => Math.max(0, i - 1))}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="light"
+              className="border"
+              disabled={qIndex >= questions.length - 1}
+              onClick={() =>
+                setQIndex((i) => Math.min(questions.length - 1, i + 1))
+              }
+            >
+              Next
+            </Button>
+            <Button
+              variant="danger"
+              disabled={submitting || qIndex < questions.length - 1}
+              onClick={submit}
+              title={
+                qIndex < questions.length - 1
+                  ? "Go to the last question to submit"
+                  : "Submit your attempt"
+              }
+            >
+              {submitting ? "Submitting…" : "Submit Quiz"}
+            </Button>
+          </div>
         ) : (
-          <Button
-            variant="danger"
-            disabled={submitting}
-            onClick={submit}
-            title="Submit your attempt"
-          >
-            {submitting ? "Submitting…" : "Submit Quiz"}
-          </Button>
+          // Not one-at-a-time (or reviewing): original buttons
+          <>
+            {attemptsInfo.remaining === 0 && !!lastAttempt ? (
+              <div className="text-secondary">No attempts remaining.</div>
+            ) : !!lastAttempt ? (
+              <Button
+                variant="danger"
+                onClick={() => {
+                  setAnswers({});
+                  setLastAttempt(null);
+                  setQIndex(0);
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+              >
+                Retake Quiz
+              </Button>
+            ) : (
+              <Button
+                variant="danger"
+                disabled={submitting}
+                onClick={submit}
+                title="Submit your attempt"
+              >
+                {submitting ? "Submitting…" : "Submit Quiz"}
+              </Button>
+            )}
+          </>
         )}
       </div>
 
