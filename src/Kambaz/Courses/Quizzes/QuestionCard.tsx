@@ -343,7 +343,7 @@ export default function QuestionCard({
                     ...d,
                     answers: (d.answers ?? [])
                       .map((s) => (s ?? "").trim())
-                      .filter((s, i, arr) => s.length > 0 || arr.length === 1),
+                      .filter((s, _i, arr) => s.length > 0 || arr.length === 1),
                   }))
                 }
               />

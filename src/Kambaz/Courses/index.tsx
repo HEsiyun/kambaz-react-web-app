@@ -4,7 +4,6 @@ import Modules from "./Modules";
 import Home from "./Home";
 import Assignments from "./Assignments";
 import AssignmentEditor from "./Assignments/Editor";
-// import PeopleTable from "./People/Table";
 import CoursePeople from "./People";
 import { Navigate, Route, Routes, useParams, useLocation } from "react-router";
 import { FaAlignJustify } from "react-icons/fa";
@@ -12,6 +11,8 @@ import Quizzes from "./Quizzes";
 import QuizDetails from "./Quizzes/Details";
 import QuizEditor from "./Quizzes/Editor";
 import QuestionsTab from "./Quizzes/QuestionsTab";
+import QuizPreview from "./Quizzes/Preview";
+import TakeQuiz from "./Quizzes/Take";
 
 export default function Courses() {
   const { cid } = useParams();
@@ -28,7 +29,6 @@ export default function Courses() {
   const course = courses.find((course: any) => course._id === cid);
   const { pathname } = useLocation();
 
-  // If not enrolled, redirect to Dashboard
   if (!isEnrolled) {
     return <Navigate to="/Kambaz/Dashboard" replace />;
   }
@@ -45,26 +45,28 @@ export default function Courses() {
           <CourseNavigation />
         </div>
         <div className="flex-fill">
-        <Routes>
-          <Route path="/" element={<Navigate to="Home" />} />
-          <Route path="Home" element={<Home />} />
-          <Route path="Modules" element={<Modules />} />
-          <Route path="Piazza" element={<h2>Piazza</h2>} />
-          <Route path="Zoom" element={<h2>Zoom</h2>} />
+          <Routes>
+            <Route path="/" element={<Navigate to="Home" />} />
+            <Route path="Home" element={<Home />} />
+            <Route path="Modules" element={<Modules />} />
+            <Route path="Piazza" element={<h2>Piazza</h2>} />
+            <Route path="Zoom" element={<h2>Zoom</h2>} />
 
-          <Route path="Assignments" element={<Assignments />} />
-          <Route path="Assignments/new" element={<AssignmentEditor />} />
-          <Route path="Assignments/:aid" element={<AssignmentEditor />} />
+            <Route path="Assignments" element={<Assignments />} />
+            <Route path="Assignments/new" element={<AssignmentEditor />} />
+            <Route path="Assignments/:aid" element={<AssignmentEditor />} />
 
-          {/* QUIZZES */}
-          <Route path="Quizzes" element={<Quizzes />} />                     {/* list */}
-          <Route path="Quizzes/:qid" element={<QuizDetails />} />            {/* details */}
-          <Route path="Quizzes/:qid/edit" element={<QuizEditor />} />        {/* details editor */}
-          <Route path="Quizzes/:qid/questions" element={<QuestionsTab />} /> {/* questions editor */}
+            {/* QUIZZES */}
+            <Route path="Quizzes" element={<Quizzes />} />                     {/* list */}
+            <Route path="Quizzes/:qid" element={<QuizDetails />} />            {/* details */}
+            <Route path="Quizzes/:qid/edit" element={<QuizEditor />} />        {/* details editor */}
+            <Route path="Quizzes/:qid/questions" element={<QuestionsTab />} /> {/* questions editor */}
+            <Route path="Quizzes/:qid/preview" element={<QuizPreview />} />    {/* ✅ preview */}
+            <Route path="Quizzes/:qid/take" element={<TakeQuiz />} />
 
-          <Route path="Grades" element={<h2>Grades</h2>} />
-          <Route path="People" element={<CoursePeople />} />
-        </Routes>
+            <Route path="Grades" element={<h2>Grades</h2>} />
+            <Route path="People" element={<CoursePeople />} />
+          </Routes>
         </div>
       </div>
     </div>
