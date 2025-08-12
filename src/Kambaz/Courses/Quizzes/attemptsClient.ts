@@ -1,4 +1,3 @@
-// src/Kambaz/Courses/Quizzes/attemptsClient.ts
 import axios from "axios";
 
 const HTTP_SERVER =
@@ -15,19 +14,45 @@ export type Attempt = {
   createdAt: string;
 };
 
-export const submitAttempt = async (qid: string, payload: {
-  answersByQid: Record<string, any>;
-  user?: string;         // dev fallback
-}) => (await api.post(`/api/quizzes/${qid}/attempts`, payload)).data as Attempt;
+// Convert server doc (which has items[]) into the shape the UI expects
+const toClientAttempt = (doc: any): Attempt => {
+  const pairs =
+    Array.isArray(doc?.items)
+      ? doc.items.map((it: any) => [
+          it.question,
+          it.type === "MC"
+            ? it.choiceId
+            : it.type === "TF"
+            ? it.booleanAnswer
+            : it.textAnswer,
+        ])
+      : [];
+
+  return {
+    _id: doc._id,
+    quiz: doc.quiz,
+    user: doc.user,
+    score: Number(doc.score || 0),
+    createdAt: String(doc.createdAt || doc.submittedAt || new Date().toISOString()),
+    answersByQid: doc.answersByQid ?? Object.fromEntries(pairs),
+  };
+};
+
+export const submitAttempt = async (
+  qid: string,
+  payload: { answersByQid: Record<string, any>; user?: string }
+) => {
+  const { data } = await api.post(`/api/quizzes/${qid}/attempts`, payload);
+  return toClientAttempt(data);
+};
 
 export const getMyLastAttempt = async (qid: string, userId?: string) => {
   try {
     const { data } = await api.get(`/api/quizzes/${qid}/attempts/me/last`, {
       params: userId ? { user: userId } : undefined,
     });
-    return data as Attempt | null;
+    return data ? toClientAttempt(data) : null;
   } catch (err: any) {
-    // If not authenticated just treat as "no previous attempt"
     if (err?.response?.status === 401) return null;
     throw err;
   }
@@ -37,5 +62,5 @@ export const listMyAttempts = async (qid: string, userId?: string) => {
   const { data } = await api.get(`/api/quizzes/${qid}/attempts/me`, {
     params: userId ? { user: userId } : undefined,
   });
-  return data as Attempt[];
+  return Array.isArray(data) ? data.map(toClientAttempt) : [];
 };

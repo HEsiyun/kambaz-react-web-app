@@ -134,7 +134,8 @@ export default function TakeQuiz() {
       return val === correct?._id || val === correct?.text;
     }
     if (q.type === "TF") {
-      return Boolean(val) === Boolean(q.answer);
+      const right = (q as any).correctBoolean;   // <-- use server field
+      return Boolean(val) === Boolean(right);
     }
     const accepted = normalizeFibList(q).map((s) => s.toLowerCase().trim());
     return accepted.includes(String(val ?? "").toLowerCase().trim());
