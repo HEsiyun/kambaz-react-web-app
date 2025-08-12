@@ -31,12 +31,9 @@ type Question = {
   title?: string;
   points: number;
   prompt?: string;
-  // MC
-  choices?: Choice[];
-  // TF
-  answer?: boolean;
-  // FIB
-  answers?: string[];
+  choices?: Choice[];   // MC
+  answer?: boolean;     // TF (client name)
+  answers?: string[];   // FIB (client name – server may send acceptableAnswers)
 };
 
 /* ---------- Utils ---------- */
@@ -125,13 +122,15 @@ export default function TakeQuiz() {
   const setAns = (qid: string, value: any) =>
     setAnswers((a) => ({ ...a, [qid]: value }));
 
+  // correctness – tolerant of server/client field names
   const isCorrect = (q: Question, val: any) => {
     if (q.type === "MC") {
       const correct = (q.choices ?? []).find((c) => c.isCorrect);
       return val === correct?._id || val === correct?.text;
     }
     if (q.type === "TF") {
-      return Boolean(val) === Boolean(q.answer);
+      const right = (q as any).correctBoolean ?? q.answer;
+      return Boolean(val) === Boolean(right);
     }
     const accepted = normalizeFibList(q).map((s) => s.toLowerCase().trim());
     return accepted.includes(String(val ?? "").toLowerCase().trim());
@@ -170,8 +169,13 @@ export default function TakeQuiz() {
     return <div className="p-3 text-danger">Quiz not found.</div>;
   }
 
-  const oneAtATime = quiz.settings?.oneQuestionAtATime;
-  const visibleQuestions = oneAtATime ? [questions[currentIndex]] : questions;
+  const oneAtATime = !!quiz.settings?.oneQuestionAtATime;
+  const resultMode = !!lastAttempt;
+
+  // 👇 During the attempt show one item; after submit show ALL
+  const visibleQuestions = oneAtATime && !resultMode
+    ? [questions[currentIndex]]
+    : questions;
 
   return (
     <div className="p-3" style={{ maxWidth: 900 }}>
@@ -201,7 +205,7 @@ export default function TakeQuiz() {
       <ol className="ps-3">
         {visibleQuestions.map((q) => {
           const ans = currentAnswers[q._id];
-          const showCheck = !!lastAttempt;
+          const showCheck = resultMode;
           const correct = showCheck ? isCorrect(q, ans) : undefined;
 
           return (
@@ -223,7 +227,7 @@ export default function TakeQuiz() {
                     {(q.choices ?? []).map((c) => (
                       <Form.Check
                         key={c._id}
-                        disabled={viewOnly || !!lastAttempt}
+                        disabled={viewOnly || resultMode}
                         type="radio"
                         name={`q-${q._id}`}
                         label={c.text}
@@ -237,7 +241,7 @@ export default function TakeQuiz() {
                 {q.type === "TF" && (
                   <div className="mt-2 d-flex gap-4">
                     <Form.Check
-                      disabled={viewOnly || !!lastAttempt}
+                      disabled={viewOnly || resultMode}
                       type="radio"
                       name={`q-${q._id}`}
                       label="True"
@@ -245,7 +249,7 @@ export default function TakeQuiz() {
                       onChange={() => setAns(q._id, true)}
                     />
                     <Form.Check
-                      disabled={viewOnly || !!lastAttempt}
+                      disabled={viewOnly || resultMode}
                       type="radio"
                       name={`q-${q._id}`}
                       label="False"
@@ -258,7 +262,7 @@ export default function TakeQuiz() {
                 {q.type === "FIB" && (
                   <div className="mt-2" style={{ maxWidth: 360 }}>
                     <Form.Control
-                      disabled={viewOnly || !!lastAttempt}
+                      disabled={viewOnly || resultMode}
                       placeholder="Your answer"
                       value={ans ?? ""}
                       onChange={(e) => setAns(q._id, e.target.value)}
@@ -282,6 +286,7 @@ export default function TakeQuiz() {
         })}
       </ol>
 
+      {/* Footer actions */}
       <div className="d-flex justify-content-between align-items-center mt-4 pt-3 border-top">
         <Link
           to={`/Kambaz/Courses/${cid}/Quizzes/${qid}`}
@@ -291,20 +296,29 @@ export default function TakeQuiz() {
         </Link>
 
         <div className="d-flex gap-2">
-          {oneAtATime && currentIndex > 0 && (
+          {/* Only show paging while taking (not after submit) */}
+          {oneAtATime && !resultMode && currentIndex > 0 && (
             <Button variant="secondary" onClick={() => setCurrentIndex((i) => i - 1)}>
               Previous
             </Button>
           )}
-          {oneAtATime && currentIndex < questions.length - 1 && (
+          {oneAtATime && !resultMode && currentIndex < questions.length - 1 && (
             <Button variant="secondary" onClick={() => setCurrentIndex((i) => i + 1)}>
               Next
             </Button>
           )}
-          {(!oneAtATime || currentIndex === questions.length - 1) &&
-            (attemptsInfo.remaining === 0 && !!lastAttempt ? (
-              <div className="text-secondary">No attempts remaining.</div>
-            ) : !!lastAttempt ? (
+
+          {/* Submit button only during attempt (and only on last item for 1-at-a-time) */}
+          {!resultMode &&
+            (!oneAtATime || currentIndex === questions.length - 1) && (
+              <Button variant="danger" disabled={submitting} onClick={submit}>
+                {submitting ? "Submitting…" : "Submit Quiz"}
+              </Button>
+            )}
+
+          {/* After submit: allow retake if any attempts remain */}
+          {resultMode &&
+            (attemptsInfo.remaining > 0 ? (
               <Button
                 variant="danger"
                 onClick={() => {
@@ -317,14 +331,7 @@ export default function TakeQuiz() {
                 Retake Quiz
               </Button>
             ) : (
-              <Button
-                variant="danger"
-                disabled={submitting}
-                onClick={submit}
-                title="Submit your attempt"
-              >
-                {submitting ? "Submitting…" : "Submit Quiz"}
-              </Button>
+              <div className="text-secondary">No attempts remaining.</div>
             ))}
         </div>
       </div>
