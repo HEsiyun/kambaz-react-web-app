@@ -7,7 +7,7 @@ import type { RootState, AppDispatch } from "../../store";
 import { questionThunks } from "./questionsReducer";
 import QuestionCard from "./QuestionCard";
 
-/** Types aligned with server */
+/** Types aligned with UI (client) */
 type Choice = { _id: string; text: string; isCorrect?: boolean };
 export type Question = {
   _id: string;                 // 'tmp-xxx' for local drafts
@@ -16,9 +16,9 @@ export type Question = {
   title: string;
   points: number;
   prompt: string;
-  choices?: Choice[];
-  answer?: boolean;
-  answers?: string[];
+  choices?: Choice[];          // MC
+  answer?: boolean;            // TF (client field)
+  answers?: string[];          // FIB (client field)
 };
 
 const uid = () =>
@@ -27,6 +27,43 @@ const uid = () =>
     : Math.random().toString(36).slice(2));
 
 const isTemp = (id: string) => id.startsWith("tmp-");
+
+/** Map client draft -> server payload (field names the API expects) */
+const toServerPayload = (q: Question): any => {
+  const base = {
+    quiz: q.quiz,
+    type: q.type,
+    title: q.title,
+    points: Number(q.points) || 0,
+    prompt: q.prompt,
+  };
+
+  if (q.type === "MC") {
+    return {
+      ...base,
+      choices: (q.choices ?? []).map((c) => ({
+        _id: c._id,
+        text: (c.text ?? "").trim(),
+        isCorrect: !!c.isCorrect,
+      })),
+    };
+  }
+
+  if (q.type === "TF") {
+    return {
+      ...base,
+      correctBoolean: !!q.answer, // <-- server name
+    };
+  }
+
+  // FIB
+  return {
+    ...base,
+    acceptableAnswers: (q.answers ?? [])
+      .map((s) => (s ?? "").trim())
+      .filter((s) => s.length > 0), // <-- server name
+  };
+};
 
 export default function QuestionsTab() {
   const { cid, qid } = useParams();
@@ -77,16 +114,8 @@ export default function QuestionsTab() {
     await Promise.all(
       drafts.map((d) =>
         dispatch(
-          questionThunks.createQuestion({
-            quiz: qid,
-            type: d.type,
-            title: d.title,
-            points: d.points,
-            prompt: d.prompt,
-            choices: d.choices,
-            answer: d.answer,
-            answers: d.answers,
-          } as any)
+          // IMPORTANT: send server field names
+          questionThunks.createQuestion(toServerPayload(d))
         )
       )
     );
@@ -100,8 +129,8 @@ export default function QuestionsTab() {
       // update the local draft only (not persisted until global Save)
       setDrafts((ds) => ds.map((d) => (d._id === q._id ? q : d)));
     } else {
-      // existing question -> save immediately to server
-      dispatch(questionThunks.updateQuestion(q));
+      // existing question -> save immediately to server (server field names)
+      dispatch(questionThunks.updateQuestion({ _id: q._id, ...toServerPayload(q) } as any));
     }
   };
 
@@ -125,7 +154,7 @@ export default function QuestionsTab() {
 
   const totalPoints = useMemo(() => {
     const serverPts = (serverQuestions || []).reduce(
-      (a, q) => a + (Number(q.points) || 0),
+      (a, q) => a + (Number((q as any).points) || 0),
       0
     );
     const draftPts = drafts.reduce((a, q) => a + (Number(q.points) || 0), 0);
@@ -155,7 +184,6 @@ export default function QuestionsTab() {
             q={q}
             onSave={handleCardSave}
             onDelete={handleCardDelete}
-            // only sync drafts for temp items
             onDraftChange={(d) => handleDraftChange(d as Question | null, q._id)}
           />
         ))}

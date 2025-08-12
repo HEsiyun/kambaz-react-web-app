@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button, Form, InputGroup } from "react-bootstrap";
 import { BsTrash, BsPlus } from "react-icons/bs";
 
-/* ---------- Types (aligned with your server) ---------- */
+/* ---------- Types (aligned with your UI model) ---------- */
 type Choice = { _id: string; text: string; isCorrect?: boolean };
 
 export type Question = {
@@ -14,8 +14,10 @@ export type Question = {
   points: number;
   prompt: string;      // HTML
   choices?: Choice[];  // MC
-  answer?: boolean;    // TF
-  answers?: string[];  // FIB
+  answer?: boolean;    // TF (client name)
+  answers?: string[];  // FIB (client name)
+  // tolerant fallback fields if API returns server names
+  // (we don't declare them in the type, but we'll read via any-safety)
 };
 
 export type QuestionCardProps = {
@@ -26,7 +28,7 @@ export type QuestionCardProps = {
   resetSignal?: number;
 };
 
-/* ---------- Tiny Tiptap (React 19 OK) ---------- */
+/* ---------- Tiny Tiptap ---------- */
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 
@@ -87,17 +89,17 @@ function normalizeForType(q: Question): Question {
             { _id: rid(), text: "Option 1", isCorrect: true },
             { _id: rid(), text: "Option 2" },
           ];
-    // ensure exactly one correct
-    const anyCorrect = base.some(c => c.isCorrect);
-    if (!anyCorrect) base[0].isCorrect = true;
+    if (!base.some((c) => c.isCorrect)) base[0].isCorrect = true;
     return { ...q, choices: base, answer: undefined, answers: undefined };
   }
   if (q.type === "TF") {
     return { ...q, answer: q.answer ?? false, choices: undefined, answers: undefined };
   }
+  // FIB
+  const cleaned = (q.answers ?? [""]).map((s) => (s ?? "").trim());
   return {
     ...q,
-    answers: q.answers?.length ? q.answers : [""],
+    answers: cleaned.length ? cleaned : [""],
     choices: undefined,
     answer: undefined,
   };
@@ -127,15 +129,15 @@ export default function QuestionCard({
   }, [editing, draft]);
 
   useEffect(() => {
-    setDraft(d => normalizeForType(d));
+    setDraft((d) => normalizeForType(d));
   }, [draft.type]);
 
-  /* ---------- MC editor helpers ---------- */
+  /* ---------- MC helpers ---------- */
   const setCorrect = (choiceId: string) => {
     if (!draft.choices) return;
     setDraft({
       ...draft,
-      choices: draft.choices.map(c => ({ ...c, isCorrect: c._id === choiceId })),
+      choices: draft.choices.map((c) => ({ ...c, isCorrect: c._id === choiceId })),
     });
   };
 
@@ -143,15 +145,14 @@ export default function QuestionCard({
     if (!draft.choices) return;
     setDraft({
       ...draft,
-      choices: draft.choices.map(c => (c._id === choiceId ? { ...c, text } : c)),
+      choices: draft.choices.map((c) => (c._id === choiceId ? { ...c, text } : c)),
     });
   };
 
   const removeChoice = (choiceId: string) => {
     if (!draft.choices) return;
-    const next = draft.choices.filter(c => c._id !== choiceId);
-    // keep at least 2; and if we deleted the correct one, make the first correct
-    if (next.length >= 2 && !next.some(c => c.isCorrect)) next[0].isCorrect = true;
+    const next = draft.choices.filter((c) => c._id !== choiceId);
+    if (next.length >= 2 && !next.some((c) => c.isCorrect)) next[0].isCorrect = true;
     setDraft({ ...draft, choices: next.length >= 2 ? next : draft.choices });
   };
 
@@ -163,6 +164,10 @@ export default function QuestionCard({
   /* ---------- Body by type ---------- */
   const body = useMemo(() => {
     if (!editing) {
+      // tolerate server field names on read (global save path)
+      const fibViewAnswers =
+        (q.answers && q.answers.length ? q.answers : (q as any).acceptableAnswers) ?? [];
+
       return (
         <>
           <div dangerouslySetInnerHTML={{ __html: q.prompt || "" }} />
@@ -182,14 +187,13 @@ export default function QuestionCard({
           )}
           {q.type === "FIB" && (
             <div className="text-secondary small mt-2">
-              Accepted answers: {(q.answers ?? []).filter(Boolean).join(", ") || "—"}
+              Accepted answers: {fibViewAnswers.filter(Boolean).join(", ") || "—"}
             </div>
           )}
         </>
       );
     }
 
-    /* -------- Multiple Choice (improved) -------- */
     if (draft.type === "MC") {
       const choices = draft.choices ?? [];
       return (
@@ -251,7 +255,7 @@ export default function QuestionCard({
                   <Form.Control
                     as="textarea"
                     rows={1}
-                    placeholder={`Answer text…`}
+                    placeholder="Answer text…"
                     value={c.text}
                     onChange={(e) => updateChoiceText(c._id, e.target.value)}
                   />
@@ -274,7 +278,6 @@ export default function QuestionCard({
       );
     }
 
-    /* -------- True/False -------- */
     if (draft.type === "TF") {
       return (
         <>
@@ -309,7 +312,7 @@ export default function QuestionCard({
       );
     }
 
-    /* -------- Fill in the Blank -------- */
+    // FIB
     const answers = draft.answers ?? [""];
     return (
       <>
@@ -334,6 +337,14 @@ export default function QuestionCard({
                     ...draft,
                     answers: answers.map((x, i) => (i === idx ? e.target.value : x)),
                   })
+                }
+                onBlur={() =>
+                  setDraft((d) => ({
+                    ...d,
+                    answers: (d.answers ?? [])
+                      .map((s) => (s ?? "").trim())
+                      .filter((s, i, arr) => s.length > 0 || arr.length === 1),
+                  }))
                 }
               />
               <Button
@@ -384,9 +395,7 @@ export default function QuestionCard({
             min={0}
             value={editing ? draft.points : q.points}
             onChange={(e) =>
-              editing
-                ? setDraft({ ...draft, points: Number(e.target.value) || 0 })
-                : undefined
+              editing ? setDraft({ ...draft, points: Number(e.target.value) || 0 }) : undefined
             }
           />
         </InputGroup>
@@ -394,9 +403,7 @@ export default function QuestionCard({
         <Form.Select
           value={editing ? draft.type : q.type}
           onChange={(e) =>
-            editing
-              ? setDraft({ ...draft, type: e.target.value as Question["type"] })
-              : undefined
+            editing ? setDraft({ ...draft, type: e.target.value as Question["type"] }) : undefined
           }
           className="ms-2"
           style={{ width: 170 }}
@@ -439,8 +446,16 @@ export default function QuestionCard({
               <Button
                 variant="danger"
                 onClick={() => {
-                  const normalized = normalizeForType(draft); // ensure one correct, min 2
-                  onSave(normalized);
+                  const cleaned =
+                    draft.type === "FIB"
+                      ? {
+                          ...draft,
+                          answers: (draft.answers ?? [])
+                            .map((s) => (s ?? "").trim())
+                            .filter((s) => s.length > 0),
+                        }
+                      : draft;
+                  onSave(normalizeForType(cleaned));
                   setEditing(false);
                   onDraftChange?.(null);
                 }}
