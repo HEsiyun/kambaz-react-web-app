@@ -12,6 +12,7 @@ type QuizSettings = {
   multipleAttempts?: boolean;
   attemptsAllowed?: number;
   oneQuestionAtATime?: boolean;
+  lockAfterAnswering?: boolean;
 };
 
 type Quiz = {
@@ -55,7 +56,6 @@ const fmt = (d: string) =>
     minute: "2-digit",
   });
 
-// Pure Fisher–Yates
 function shuffleIds<T>(ids: T[]) {
   const a = [...ids];
   for (let i = a.length - 1; i > 0; i--) {
@@ -90,6 +90,9 @@ export default function TakeQuiz() {
   const [attemptsUsed, setAttemptsUsed] = useState<number>(0);
   const [submitting, setSubmitting] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
+
+  // warning banner text
+  const [warn, setWarn] = useState<string>("");
 
   /**
    * Stable per-session/attempt order map:
@@ -133,6 +136,7 @@ export default function TakeQuiz() {
         orderRef.current = {};
         setAnswers({});
         setCurrentIndex(0);
+        setWarn("");
         setShuffleEpoch((e) => e + 1);
       } catch {
         if (alive) setQuiz(null);
@@ -175,12 +179,7 @@ export default function TakeQuiz() {
 
   const currentAnswers = lastAttempt?.answersByQid ?? answers;
 
-  /**
-   * Build (or read) the per-question display order.
-   * We compute once per (questions, shuffle setting, shuffleEpoch) and then keep it stable.
-   *  - MC: returns a map of qid -> Choice[] in display order
-   *  - TF: returns a map of qid -> ("T" | "F")[] in display order
-   */
+  // Build display order maps for MC and TF
   const { mcChoicesMap, tfOrderMap } = useMemo(() => {
     const mcMap: Record<string, Choice[]> = {};
     const tfMap: Record<string, ("T" | "F")[]> = {};
@@ -189,26 +188,25 @@ export default function TakeQuiz() {
     for (const q of questions) {
       if (q.type === "MC") {
         const raw = q.choices ?? [];
-        if (raw.length === 0) continue;
-
-        const existing = orderRef.current[q._id];
-        let ids: string[];
-        if (existing && existing.length === raw.length) {
-          ids = existing;
-        } else {
-          const baseIds = raw.map((c) => c._id);
-          ids = shouldShuffle ? shuffleIds(baseIds) : baseIds;
-          orderRef.current[q._id] = ids;
+        if (raw.length > 0) {
+          const existing = orderRef.current[q._id];
+          let ids: string[];
+          if (existing && existing.length === raw.length) {
+            ids = existing;
+          } else {
+            const baseIds = raw.map((c) => c._id);
+            ids = shouldShuffle ? shuffleIds(baseIds) : baseIds;
+            orderRef.current[q._id] = ids;
+          }
+          const byId = new Map(raw.map((c) => [c._id, c]));
+          mcMap[q._id] = ids.map((id) => byId.get(id)).filter(Boolean) as Choice[];
         }
-
-        const byId = new Map(raw.map((c) => [c._id, c]));
-        mcMap[q._id] = ids.map((id) => byId.get(id)).filter(Boolean) as Choice[];
       }
 
       if (q.type === "TF") {
         const existing = orderRef.current[q._id];
         let ord: ("T" | "F")[];
-        if (existing && existing.length === 2 && (existing.includes("T") && existing.includes("F"))) {
+        if (existing && existing.length === 2 && existing.includes("T") && existing.includes("F")) {
           ord = existing as ("T" | "F")[];
         } else {
           const base: ("T" | "F")[] = ["T", "F"];
@@ -221,14 +219,40 @@ export default function TakeQuiz() {
     return { mcChoicesMap: mcMap, tfOrderMap: tfMap };
   }, [questions, quiz?.settings?.shuffleAnswers, shuffleEpoch]);
 
-  const getDisplayChoices = (q: Question): Choice[] => {
-    if (q.type !== "MC") return q.choices ?? [];
-    return mcChoicesMap[q._id] ?? (q.choices ?? []);
-  };
+  const getDisplayChoices = (q: Question): Choice[] =>
+    q.type === "MC" ? mcChoicesMap[q._id] ?? (q.choices ?? []) : (q.choices ?? []);
 
-  const getTFOrder = (q: Question): ("T" | "F")[] => {
-    if (q.type !== "TF") return ["T", "F"];
-    return tfOrderMap[q._id] ?? ["T", "F"];
+  const getTFOrder = (q: Question): ("T" | "F")[] =>
+    q.type === "TF" ? tfOrderMap[q._id] ?? ["T", "F"] : ["T", "F"];
+
+  // ---- navigation guards ----
+  const oneAtATime = !!quiz?.settings?.oneQuestionAtATime;
+  const lockAfter = !!quiz?.settings?.lockAfterAnswering;
+  const resultMode = !isPreview && !!lastAttempt;
+
+  const goPrev = () => {
+    if (!oneAtATime || resultMode || isPreview) {
+      setCurrentIndex((i) => Math.max(0, i - 1));
+      return;
+    }
+    // guard only applies during an active attempt with lockAfterAnswering
+    if (!lockAfter) {
+      setCurrentIndex((i) => Math.max(0, i - 1));
+      return;
+    }
+    setWarn(""); // clear any old message
+    setCurrentIndex((i) => {
+      const target = i - 1;
+      if (target < 0) return 0;
+      const prevQ = questions[target];
+      const prevAnswered = prevQ && currentAnswers[prevQ._id] !== undefined;
+      if (prevAnswered) {
+        setWarn("You can’t go back. Questions are locked after answering.");
+        // keep index unchanged
+        return i;
+      }
+      return target;
+    });
   };
 
   const submit = async () => {
@@ -264,20 +288,28 @@ export default function TakeQuiz() {
     return <div className="p-3 text-danger">Quiz not found.</div>;
   }
 
-  const oneAtATime = !!quiz.settings?.oneQuestionAtATime;
-  // In preview, we never show result-mode; in normal take, resultMode = has lastAttempt
-  const resultMode = !isPreview && !!lastAttempt;
-
   // During attempt show one item; after submit show ALL
   const visibleQuestions =
     oneAtATime && !resultMode ? [questions[currentIndex]] : questions;
 
   return (
     <div className="p-3" style={{ maxWidth: 900 }}>
-      <h4 className="mb-3">
+      <h4 className="mb-2">
         {quiz.title}
         {isPreview && <span className="text-secondary ms-2 small">(Preview)</span>}
       </h4>
+
+      {/* warning banner for lock-after-answering */}
+      {warn && (
+        <Alert
+          variant="warning"
+          onClose={() => setWarn("")}
+          dismissible
+          className="mb-3"
+        >
+          {warn}
+        </Alert>
+      )}
 
       {/* Status only in real take mode */}
       {!isPreview && !!lastAttempt && (
@@ -290,8 +322,7 @@ export default function TakeQuiz() {
           </div>
           {attemptsInfo.remaining > 0 ? (
             <div className="text-secondary small">
-              Attempts used: {attemptsUsed}/{attemptsInfo.allowed} • Remaining:{" "}
-              {attemptsInfo.remaining}
+              Attempts used: {attemptsUsed}/{attemptsInfo.allowed} • Remaining: {attemptsInfo.remaining}
             </div>
           ) : (
             <div className="text-secondary small">
@@ -322,10 +353,8 @@ export default function TakeQuiz() {
                     : "transparent",
                 }}
               >
-                {/* prompt */}
                 {q.prompt && <div dangerouslySetInnerHTML={{ __html: q.prompt }} />}
 
-                {/* type renderers */}
                 {q.type === "MC" && (
                   <div className="mt-2 d-flex flex-column gap-2">
                     {choices.map((c) => (
@@ -377,7 +406,6 @@ export default function TakeQuiz() {
                   </div>
                 )}
 
-                {/* correctness label */}
                 {showCheck && (
                   <div className={`mt-2 small ${correct ? "text-success" : "text-danger"}`}>
                     {correct ? "Correct" : "Incorrect"}
@@ -401,7 +429,7 @@ export default function TakeQuiz() {
         <div className="d-flex gap-2">
           {/* Paging only during attempt (not preview, not result) */}
           {oneAtATime && !resultMode && !isPreview && currentIndex > 0 && (
-            <Button variant="secondary" onClick={() => setCurrentIndex((i) => i - 1)}>
+            <Button variant="secondary" onClick={goPrev}>
               Previous
             </Button>
           )}
@@ -431,6 +459,7 @@ export default function TakeQuiz() {
                   setLastAttempt(null);
                   setCurrentIndex(0);
                   orderRef.current = {}; // clear old order
+                  setWarn("");
                   setShuffleEpoch((e) => e + 1); // force new shuffle set
                   window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
