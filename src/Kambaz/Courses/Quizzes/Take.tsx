@@ -56,7 +56,7 @@ const fmt = (d: string) =>
   });
 
 // Pure Fisher–Yates
-function shuffleIds(ids: string[]) {
+function shuffleIds<T>(ids: T[]) {
   const a = [...ids];
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -69,7 +69,9 @@ function shuffleIds(ids: string[]) {
 export default function TakeQuiz() {
   const { cid, qid } = useParams();
   const location = useLocation();
-  const isPreview = /\/preview\/?$/.test(location.pathname);
+  const isPreview =
+    /\/preview\/?$/.test(location.pathname) ||
+    new URLSearchParams(location.search).get("preview") === "1";
 
   const currentUser = useSelector(
     (s: RootState) => s.accountReducer.currentUser as { _id?: string; role?: string } | null
@@ -89,8 +91,13 @@ export default function TakeQuiz() {
   const [submitting, setSubmitting] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
 
-  // Stable per-session/attempt order map: qid -> choice ids (in display order)
-  const choiceOrderRef = useRef<Record<string, string[]>>({});
+  /**
+   * Stable per-session/attempt order map:
+   *  - For MC: stores the array of choice IDs.
+   *  - For TF: stores the array ["T","F"] or ["F","T"].
+   */
+  const orderRef = useRef<Record<string, string[]>>({});
+
   // Bump this to force a new shuffle (preview load, retake)
   const [shuffleEpoch, setShuffleEpoch] = useState(0);
 
@@ -123,7 +130,7 @@ export default function TakeQuiz() {
         }
 
         // Reset UI state & force a fresh shuffle set
-        choiceOrderRef.current = {};
+        orderRef.current = {};
         setAnswers({});
         setCurrentIndex(0);
         setShuffleEpoch((e) => e + 1);
@@ -168,38 +175,60 @@ export default function TakeQuiz() {
 
   const currentAnswers = lastAttempt?.answersByQid ?? answers;
 
-  // Build (or read) the per-question display order.
-  // We build once per (questions, shuffle setting, shuffleEpoch) and then keep.
-  const displayChoicesMap = useMemo(() => {
-    const map: Record<string, Choice[]> = {};
+  /**
+   * Build (or read) the per-question display order.
+   * We compute once per (questions, shuffle setting, shuffleEpoch) and then keep it stable.
+   *  - MC: returns a map of qid -> Choice[] in display order
+   *  - TF: returns a map of qid -> ("T" | "F")[] in display order
+   */
+  const { mcChoicesMap, tfOrderMap } = useMemo(() => {
+    const mcMap: Record<string, Choice[]> = {};
+    const tfMap: Record<string, ("T" | "F")[]> = {};
     const shouldShuffle = !!quiz?.settings?.shuffleAnswers;
 
     for (const q of questions) {
-      if (q.type !== "MC") continue;
-      const raw = q.choices ?? [];
-      if (raw.length === 0) continue;
+      if (q.type === "MC") {
+        const raw = q.choices ?? [];
+        if (raw.length === 0) continue;
 
-      // Use existing order if already generated for this qid
-      const existing = choiceOrderRef.current[q._id];
-      let ids: string[];
-      if (existing && existing.length === raw.length) {
-        ids = existing;
-      } else {
-        const baseIds = raw.map((c) => c._id);
-        ids = shouldShuffle ? shuffleIds(baseIds) : baseIds;
-        choiceOrderRef.current[q._id] = ids;
+        const existing = orderRef.current[q._id];
+        let ids: string[];
+        if (existing && existing.length === raw.length) {
+          ids = existing;
+        } else {
+          const baseIds = raw.map((c) => c._id);
+          ids = shouldShuffle ? shuffleIds(baseIds) : baseIds;
+          orderRef.current[q._id] = ids;
+        }
+
+        const byId = new Map(raw.map((c) => [c._id, c]));
+        mcMap[q._id] = ids.map((id) => byId.get(id)).filter(Boolean) as Choice[];
       }
 
-      const byId = new Map(raw.map((c) => [c._id, c]));
-      map[q._id] = ids.map((id) => byId.get(id)).filter(Boolean) as Choice[];
+      if (q.type === "TF") {
+        const existing = orderRef.current[q._id];
+        let ord: ("T" | "F")[];
+        if (existing && existing.length === 2 && (existing.includes("T") && existing.includes("F"))) {
+          ord = existing as ("T" | "F")[];
+        } else {
+          const base: ("T" | "F")[] = ["T", "F"];
+          ord = shouldShuffle ? (shuffleIds(base) as ("T" | "F")[]) : base;
+          orderRef.current[q._id] = ord;
+        }
+        tfMap[q._id] = ord;
+      }
     }
-    return map;
-    // shuffleEpoch ensures a fresh randomization on preview load / retake
+    return { mcChoicesMap: mcMap, tfOrderMap: tfMap };
   }, [questions, quiz?.settings?.shuffleAnswers, shuffleEpoch]);
 
   const getDisplayChoices = (q: Question): Choice[] => {
     if (q.type !== "MC") return q.choices ?? [];
-    return displayChoicesMap[q._id] ?? (q.choices ?? []);
+    return mcChoicesMap[q._id] ?? (q.choices ?? []);
+  };
+
+  const getTFOrder = (q: Question): ("T" | "F")[] => {
+    if (q.type !== "TF") return ["T", "F"];
+    return tfOrderMap[q._id] ?? ["T", "F"];
   };
 
   const submit = async () => {
@@ -215,7 +244,7 @@ export default function TakeQuiz() {
         createdAt: attempt.createdAt as any,
       });
       setAttemptsUsed((n) => n + 1);
-      // keep choiceOrderRef so the review uses the same order this session
+      // keep orderRef so the review uses the same order this session
       setAnswers({});
       window.scrollTo({ top: 0, behavior: "smooth" });
     } finally {
@@ -279,6 +308,7 @@ export default function TakeQuiz() {
           const showCheck = resultMode; // never in preview
           const correct = showCheck ? isCorrect(q, ans) : undefined;
           const choices = getDisplayChoices(q);
+          const tfOrder = getTFOrder(q);
 
           return (
             <li key={q._id} className="mb-4">
@@ -314,22 +344,20 @@ export default function TakeQuiz() {
 
                 {q.type === "TF" && (
                   <div className="mt-2 d-flex gap-4">
-                    <Form.Check
-                      disabled={viewOnly || showCheck || isPreview}
-                      type="radio"
-                      name={`q-${q._id}`}
-                      label="True"
-                      checked={ans === true}
-                      onChange={() => setAns(q._id, true)}
-                    />
-                    <Form.Check
-                      disabled={viewOnly || showCheck || isPreview}
-                      type="radio"
-                      name={`q-${q._id}`}
-                      label="False"
-                      checked={ans === false}
-                      onChange={() => setAns(q._id, false)}
-                    />
+                    {tfOrder.map((key) => {
+                      const isTrue = key === "T";
+                      return (
+                        <Form.Check
+                          key={key}
+                          disabled={viewOnly || showCheck || isPreview}
+                          type="radio"
+                          name={`q-${q._id}`}
+                          label={isTrue ? "True" : "False"}
+                          checked={ans === (isTrue ? true : false)}
+                          onChange={() => setAns(q._id, isTrue)}
+                        />
+                      );
+                    })}
                   </div>
                 )}
 
@@ -402,7 +430,7 @@ export default function TakeQuiz() {
                   setAnswers({});
                   setLastAttempt(null);
                   setCurrentIndex(0);
-                  choiceOrderRef.current = {}; // clear old order
+                  orderRef.current = {}; // clear old order
                   setShuffleEpoch((e) => e + 1); // force new shuffle set
                   window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
