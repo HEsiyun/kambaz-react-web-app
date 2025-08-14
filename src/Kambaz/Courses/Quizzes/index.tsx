@@ -1,8 +1,7 @@
 // src/Kambaz/Courses/Quizzes/index.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { Link } from "react-router-dom";
-
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   Button,
   Dropdown,
@@ -10,7 +9,6 @@ import {
   Spinner,
   Tooltip,
 } from "react-bootstrap";
-import { useNavigate, useParams } from "react-router-dom";
 import type { AppDispatch, RootState } from "../../store";
 import { quizThunks, type Quiz } from "./reducer";
 import { BsThreeDotsVertical } from "react-icons/bs";
@@ -37,7 +35,6 @@ function availabilityLabel(q: Quiz, now = new Date()) {
   if ((from && now >= from) || (!from && (!until || now <= until))) {
     return "Available";
   }
-  // default if dates aren’t set
   return "Available";
 }
 
@@ -50,9 +47,8 @@ export default function Quizzes() {
     (s: RootState) => s.quizzesReducer
   );
   const currentUser = useSelector(
-    (s: RootState) => s.accountReducer.currentUser as
-      | { _id?: string; role?: string }
-      | null
+    (s: RootState) =>
+      s.accountReducer.currentUser as { _id?: string; role?: string } | null
   );
   const isFaculty = currentUser?.role === "FACULTY";
 
@@ -99,7 +95,10 @@ export default function Quizzes() {
           const { data } = await api.get<any[]>(
             `/api/quizzes/${q._id}/questions`
           );
-          setCount((m) => ({ ...m, [q._id]: Array.isArray(data) ? data.length : 0 }));
+          setCount((m) => ({
+            ...m,
+            [q._id]: Array.isArray(data) ? data.length : 0,
+          }));
         } catch {}
       }
 
@@ -119,14 +118,25 @@ export default function Quizzes() {
     });
   }, [list, api, isFaculty, pointsByQuiz, countByQuiz, scoreByQuiz]);
 
-  const add = () => {
-    if (!cid) return;
-    dispatch(
-      quizThunks.createQuizThunk({
-        cid,
-        data: { title: "New Quiz", description: "", published: false },
-      })
-    );
+  // --- Create & immediately navigate to Details editor ---
+  const [creating, setCreating] = useState(false);
+  const add = async () => {
+    if (!cid || creating) return;
+    try {
+      setCreating(true);
+      const action: any = await dispatch(
+        quizThunks.createQuizThunk({
+          cid,
+          data: { title: "New Quiz", description: "", published: false },
+        })
+      );
+      const created = action?.payload ?? action;
+      if (created && created._id) {
+        navigate(`/Kambaz/Courses/${cid}/Quizzes/${created._id}/edit`);
+      }
+    } finally {
+      setCreating(false);
+    }
   };
 
   const goEdit = (q: Quiz) =>
@@ -139,13 +149,35 @@ export default function Quizzes() {
       quizThunks.publishQuizThunk({ qid: q._id, published: !q.published })
     );
 
+  // ---- SORT BY "Available from" (ascending). Items without a date go last. ----
+  const sortedList = useMemo(() => {
+    const toKey = (q: Quiz) =>
+      q.availableFrom ? new Date(q.availableFrom).getTime() : Number.POSITIVE_INFINITY;
+    return [...list].sort((a, b) => {
+      const da = toKey(a);
+      const db = toKey(b);
+      if (da !== db) return da - db; // earlier first
+      // tie-breaker for consistent order
+      const at = (a.title ?? "").toLowerCase();
+      const bt = (b.title ?? "").toLowerCase();
+      return at.localeCompare(bt);
+    });
+  }, [list]);
+
   return (
     <div className="p-3">
       <div className="d-flex align-items-center mb-3">
         <h3 className="mb-0">Quizzes</h3>
         {isFaculty && (
-          <Button size="sm" className="ms-auto" variant="danger" onClick={add}>
-            <FaPlus className="me-2" /> Quiz
+          <Button
+            size="sm"
+            className="ms-auto"
+            variant="danger"
+            onClick={add}
+            disabled={creating}
+          >
+            <FaPlus className="me-2" />
+            {creating ? "Creating…" : "Quiz"}
           </Button>
         )}
       </div>
@@ -158,14 +190,14 @@ export default function Quizzes() {
       )}
       {error && <div className="text-danger">Error: {error}</div>}
 
-      {!loading && list.length === 0 && (
+      {!loading && sortedList.length === 0 && (
         <div className="text-secondary">
           No quizzes yet. {isFaculty && "Click + Quiz to create one."}
         </div>
       )}
 
       <ul className="list-group">
-        {list.map((q) => {
+        {sortedList.map((q) => {
           const avail = availabilityLabel(q);
           const due = q.dueDate ? `Due: ${fmt(q.dueDate)}` : null;
           const pts =
@@ -181,7 +213,6 @@ export default function Quizzes() {
               ? `Score: ${scoreByQuiz[q._id]}`
               : undefined;
 
-          // build the meta line (availability first)
           const bits = [avail, due, pts, qs, lastScore].filter(Boolean);
 
           return (
@@ -192,14 +223,14 @@ export default function Quizzes() {
               {/* LEFT: title + meta */}
               <div className="flex-grow-1">
                 <div className="d-flex align-items-center gap-2">
-                <span className="fw-bold">
+                  <span className="fw-bold">
                     <Link
-                        to={`/Kambaz/Courses/${q.course}/Quizzes/${q._id}`}
-                        className="text-decoration-none"
+                      to={`/Kambaz/Courses/${q.course}/Quizzes/${q._id}`}
+                      className="text-decoration-none"
                     >
-                        {q.title}
+                      {q.title}
                     </Link>
-                </span>
+                  </span>
                 </div>
 
                 <div className="small text-secondary">
@@ -218,7 +249,9 @@ export default function Quizzes() {
                   <OverlayTrigger
                     placement="top"
                     overlay={
-                      <Tooltip>{q.published ? "Published" : "Unpublished"}</Tooltip>
+                      <Tooltip>
+                        {q.published ? "Published" : "Unpublished"}
+                      </Tooltip>
                     }
                   >
                     <span className="me-2 mt-1">
