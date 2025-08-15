@@ -8,6 +8,7 @@ import type { RootState } from "../../store";
 import { getMyLastAttempt, listMyAttempts } from "./attemptsClient";
 
 type QuizSettings = {
+  shuffleAnswers?: boolean;
   timeLimitMin?: number;
   multipleAttempts?: boolean;
   attemptsAllowed?: number;
@@ -189,7 +190,7 @@ export default function QuizDetails() {
         </Alert>
       )}
 
-      {/* Student-relevant properties only */}
+      {/* Properties */}
       <div className="border rounded p-3">
         <Row className="mb-2">
           <Col sm={4} className="text-secondary fw-semibold">
@@ -197,45 +198,61 @@ export default function QuizDetails() {
           </Col>
           <Col>{typeLabel}</Col>
         </Row>
+
         <Row className="mb-2">
           <Col sm={4} className="text-secondary fw-semibold">
             Points
           </Col>
           <Col>{points}</Col>
         </Row>
+
         <Row className="mb-2">
           <Col sm={4} className="text-secondary fw-semibold">
             Assignment Group
           </Col>
           <Col>{quiz.assignmentGroup ?? "Quizzes"}</Col>
         </Row>
+
+        {/* Faculty-only: show Shuffle Answers setting on details */}
+        {isFaculty && (
+          <Row className="mb-2">
+            <Col sm={4} className="text-secondary fw-semibold">
+              Shuffle Answers
+            </Col>
+            <Col>{yesNo(s.shuffleAnswers ?? true)}</Col>
+          </Row>
+        )}
+
         <Row className="mb-2">
           <Col sm={4} className="text-secondary fw-semibold">
             Time Limit
           </Col>
           <Col>{(s.timeLimitMin ?? 0) > 0 ? `${s.timeLimitMin} Minutes` : "None"}</Col>
         </Row>
+
         <Row className="mb-2">
           <Col sm={4} className="text-secondary fw-semibold">
             Multiple Attempts
           </Col>
           <Col>
-            {yesNo(multipleAttempts)}{" "}
-            {multipleAttempts ? `(Up to ${attemptsAllowed})` : ""}
+            {yesNo(multipleAttempts)} {multipleAttempts ? `(Up to ${attemptsAllowed})` : ""}
           </Col>
         </Row>
+
         <Row className="mb-2">
           <Col sm={4} className="text-secondary fw-semibold">
             One Question at a Time
           </Col>
           <Col>{yesNo(s.oneQuestionAtATime)}</Col>
         </Row>
+
         <Row className="mb-2">
           <Col sm={4} className="text-secondary fw-semibold">
             Webcam Required
           </Col>
           <Col>{yesNo(s.webcamRequired)}</Col>
         </Row>
+
         <Row className="mb-4">
           <Col sm={4} className="text-secondary fw-semibold">
             Lock Questions After Answering

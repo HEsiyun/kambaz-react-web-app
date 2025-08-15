@@ -263,7 +263,7 @@ export default function QuizEditor() {
 
             <Form.Group className="mb-3">
               <Form.Check
-                type="switch"
+                type="checkbox"
                 id="qs-shuffle"
                 label="Shuffle Answers"
                 checked={shuffleAnswers}
