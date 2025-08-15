@@ -18,14 +18,16 @@ export type Attempt = {
 const toClientAttempt = (doc: any): Attempt => {
   const pairs =
     Array.isArray(doc?.items)
-      ? doc.items.map((it: any) => [
-          it.question,
-          it.type === "MC"
-            ? it.choiceId
-            : it.type === "TF"
-            ? it.booleanAnswer
-            : it.textAnswer,
-        ])
+      ? doc.items.map((it: any) => {
+          let value: any;
+          if (it.type === "MC") value = it.choiceId;
+          else if (it.type === "TF") value = it.booleanAnswer;
+          else {
+            // FIB: prefer array if available
+            value = Array.isArray(it.textAnswers) ? it.textAnswers : [it.textAnswer ?? ""];
+          }
+          return [it.question, value];
+        })
       : [];
 
   return {

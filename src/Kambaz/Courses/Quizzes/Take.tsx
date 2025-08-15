@@ -1,3 +1,4 @@
+// src/Kambaz/Courses/Quizzes/Take.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Form, Spinner, Alert } from "react-bootstrap";
 import { Link, useLocation, useParams } from "react-router-dom";
@@ -35,19 +36,17 @@ type Question = {
   prompt?: string;
   choices?: Choice[];   // MC
   answer?: boolean;     // TF (client name)
-  answers?: string[];   // FIB (client name – server may send acceptableAnswers)
+  // FIB (client name – server may send acceptableAnswers or acceptableAnswersByBlank)
+  answers?: string[];
+  acceptableAnswers?: string[];
+  acceptableAnswersByBlank?: string[][];
+  correctBoolean?: boolean; // TF (server name)
 };
 
 /* ---------- Utils ---------- */
 const HTTP_SERVER =
   (import.meta as any).env?.VITE_HTTP_SERVER ?? "http://localhost:4000";
-
 const api = axios.create({ baseURL: HTTP_SERVER, withCredentials: true });
-
-const normalizeFibList = (q: Question) =>
-  (q.answers && q.answers.length
-    ? q.answers
-    : ((q as any).acceptableAnswers as string[] | undefined)) ?? [];
 
 const fmt = (d: string) =>
   new Date(d).toLocaleString(undefined, {
@@ -57,9 +56,9 @@ const fmt = (d: string) =>
     minute: "2-digit",
   });
 
-// Fisher–Yates
-function shuffleIds(ids: string[]) {
-  const a = [...ids];
+// shuffle
+function shuffle<T>(arr: T[]) {
+  const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [a[i], a[j]] = [a[j], a[i]];
@@ -73,6 +72,33 @@ function msToClock(ms: number) {
   const s = clamped % 60;
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
+
+// blanks helpers (must match server logic)
+const countBlanksInPrompt = (html?: string) =>
+  html ? (html.match(/__\s*\d+\s*__/g) || []).length : 0;
+
+const acceptedByBlank = (q: Question): string[][] => {
+  if (Array.isArray(q.acceptableAnswersByBlank) && q.acceptableAnswersByBlank.length) {
+    return q.acceptableAnswersByBlank.map((arr) => (arr || []).map((s) => String(s ?? "")).filter(Boolean));
+  }
+  const flat =
+    (Array.isArray((q as any).acceptableAnswers) && (q as any).acceptableAnswers.length
+      ? (q as any).acceptableAnswers
+      : Array.isArray(q.answers) && q.answers.length
+      ? q.answers
+      : []) as string[];
+  const blanks = countBlanksInPrompt(q.prompt || q.title || "");
+  const clean = flat.map((s) => String(s ?? "")).filter(Boolean);
+  if (blanks > 1 && clean.length === blanks) return clean.map((ans) => [ans]);
+  return [clean]; // single-blank fallback
+};
+
+const caseInsensitive = (q: Question) => (q as any).caseInsensitive !== false;
+const trimInput = (q: Question) => (q as any).trimInput !== false;
+const normWith = (q: Question) => (s: string) => {
+  const t = trimInput(q) ? String(s ?? "").trim() : String(s ?? "");
+  return caseInsensitive(q) ? t.toLowerCase() : t;
+};
 
 /* ---------- Component ---------- */
 export default function TakeQuiz() {
@@ -98,9 +124,8 @@ export default function TakeQuiz() {
   const [submitting, setSubmitting] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
 
-  // Stable per-session/attempt order map: qid -> choice ids (in display order)
+  // choice order for MC/TF shuffling
   const choiceOrderRef = useRef<Record<string, string[]>>({});
-  // Bump this to force a new shuffle (preview load, retake)
   const [shuffleEpoch, setShuffleEpoch] = useState(0);
 
   // Timer
@@ -108,7 +133,7 @@ export default function TakeQuiz() {
   const [remainingMs, setRemainingMs] = useState<number>(0);
   const [expired, setExpired] = useState(false);
 
-  // Load quiz + questions + (if not preview) last attempt
+  // Load quiz + questions + attempts (not in preview)
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -122,7 +147,6 @@ export default function TakeQuiz() {
         setQuiz(qz);
         setQuestions(qs);
 
-        // Only fetch attempt data for real taking (not preview)
         if (!isPreview) {
           const [last, allMine] = await Promise.all([
             getMyLastAttempt(qid!, currentUser?._id),
@@ -136,19 +160,18 @@ export default function TakeQuiz() {
           setAttemptsUsed(0);
         }
 
-        // Reset UI state & force a fresh shuffle set
+        // reset attempt-local state
         choiceOrderRef.current = {};
         setAnswers({});
         setCurrentIndex(0);
         setShuffleEpoch((e) => e + 1);
 
-        // timer init (client-side): start when screen loads a fresh attempt
+        // timer
         const tl = Number(qz?.settings?.timeLimitMin || 0);
-        const hasTL = !isPreview && !lastAttempt && tl > 0;
+        const hasTL = !isPreview && tl > 0;
         if (hasTL) {
-          const endAt = Date.now() + tl * 60_000;
-          endAtRef.current = endAt;
-          setRemainingMs(endAt - Date.now());
+          endAtRef.current = Date.now() + tl * 60_000;
+          setRemainingMs((endAtRef.current as number) - Date.now());
           setExpired(false);
         } else {
           endAtRef.current = null;
@@ -166,32 +189,25 @@ export default function TakeQuiz() {
     };
   }, [qid, currentUser?._id, isPreview]);
 
-  // Countdown tick
+  // Countdown
   useEffect(() => {
     if (isPreview) return;
     if (!quiz?.settings?.timeLimitMin) return;
-    if (lastAttempt) return; // don't count down in review mode
+    if (lastAttempt) return;
     if (!endAtRef.current) return;
-
     const tick = () => {
       const ms = (endAtRef.current as number) - Date.now();
       setRemainingMs(ms);
-      if (ms <= 0) {
-        setExpired(true);
-      }
+      if (ms <= 0) setExpired(true);
     };
-
     tick();
     const id = setInterval(tick, 500);
     return () => clearInterval(id);
   }, [quiz?.settings?.timeLimitMin, lastAttempt, isPreview]);
 
-  // Auto-submit when expired
+  // Auto-submit if expired
   useEffect(() => {
-    if (!expired) return;
-    if (isPreview) return;
-    if (submitting) return;
-    // Submit once
+    if (!expired || isPreview || submitting) return;
     submit(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expired]);
@@ -210,7 +226,7 @@ export default function TakeQuiz() {
   const setAns = (qid: string, value: any) =>
     setAnswers((a) => ({ ...a, [qid]: value }));
 
-  // correctness – tolerant of server/client field names
+  /* ---------- Correctness (client mirror of server) ---------- */
   const isCorrect = (q: Question, val: any) => {
     if (q.type === "MC") {
       const correct = (q.choices ?? []).find((c) => c.isCorrect);
@@ -220,13 +236,23 @@ export default function TakeQuiz() {
       const right = (q as any).correctBoolean ?? q.answer;
       return Boolean(val) === Boolean(right);
     }
-    const accepted = normalizeFibList(q).map((s) => s.toLowerCase().trim());
-    return accepted.includes(String(val ?? "").toLowerCase().trim());
+    // FIB: per-blank
+    const byBlank = acceptedByBlank(q);
+    const norm = normWith(q);
+    const student: string[] = Array.isArray(val) ? val.map(String) : [String(val ?? "")];
+    const blanks = Math.max(byBlank.length, student.length);
+    const ok = Array.from({ length: blanks }, (_, i) => {
+      const accepted = (byBlank[i] || []).map(norm);
+      const s = norm(student[i] ?? "");
+      if (!accepted.length) return false;
+      return accepted.includes(s);
+    });
+    return ok.every(Boolean);
   };
 
   const currentAnswers = lastAttempt?.answersByQid ?? answers;
 
-  // Build (or read) the per-question display order (MC shuffle).
+  /* ---------- Shuffle order for MC (and TF order if desired) ---------- */
   const displayChoicesMap = useMemo(() => {
     const map: Record<string, Choice[]> = {};
     const shouldShuffle = !!quiz?.settings?.shuffleAnswers;
@@ -234,7 +260,7 @@ export default function TakeQuiz() {
     for (const q of questions) {
       if (q.type !== "MC") continue;
       const raw = q.choices ?? [];
-      if (raw.length === 0) continue;
+      if (!raw.length) continue;
 
       const existing = choiceOrderRef.current[q._id];
       let ids: string[];
@@ -242,12 +268,11 @@ export default function TakeQuiz() {
         ids = existing;
       } else {
         const baseIds = raw.map((c) => c._id);
-        ids = shouldShuffle ? shuffleIds(baseIds) : baseIds;
+        ids = shouldShuffle ? shuffle(baseIds) : baseIds;
         choiceOrderRef.current[q._id] = ids;
       }
-
       const byId = new Map(raw.map((c) => [c._id, c]));
-      map[q._id] = ids.map((id) => byId.get(id)).filter(Boolean) as Choice[];
+      map[q._id] = ids.map((id) => byId.get(id)!).filter(Boolean);
     }
     return map;
   }, [questions, quiz?.settings?.shuffleAnswers, shuffleEpoch]);
@@ -257,8 +282,9 @@ export default function TakeQuiz() {
     return displayChoicesMap[q._id] ?? (q.choices ?? []);
   };
 
+  /* ---------- Submit ---------- */
   const submit = async (_auto = false) => {
-    if (isPreview) return; // never submit in preview
+    if (isPreview) return;
     try {
       setSubmitting(true);
       const payload = { answersByQid: answers, user: currentUser?._id };
@@ -270,7 +296,6 @@ export default function TakeQuiz() {
         createdAt: attempt.createdAt as any,
       });
       setAttemptsUsed((n) => n + 1);
-      // keep choice order so the review uses same order this session
       setAnswers({});
       window.scrollTo({ top: 0, behavior: "smooth" });
     } finally {
@@ -286,17 +311,11 @@ export default function TakeQuiz() {
       </div>
     );
   }
-  if (!quiz) {
-    return <div className="p-3 text-danger">Quiz not found.</div>;
-  }
+  if (!quiz) return <div className="p-3 text-danger">Quiz not found.</div>;
 
   const oneAtATime = !!quiz.settings?.oneQuestionAtATime;
-  // In preview, we never show result-mode; in normal take, resultMode = has lastAttempt
   const resultMode = !isPreview && !!lastAttempt;
-
-  // During attempt show one item; after submit show ALL
-  const visibleQuestions =
-    oneAtATime && !resultMode ? [questions[currentIndex]] : questions;
+  const visibleQuestions = oneAtATime && !resultMode ? [questions[currentIndex]] : questions;
 
   const hasTimeLimit = !isPreview && !resultMode && (quiz.settings?.timeLimitMin || 0) > 0;
 
@@ -307,8 +326,6 @@ export default function TakeQuiz() {
           {quiz.title}
           {isPreview && <span className="text-secondary ms-2 small">(Preview)</span>}
         </h4>
-
-        {/* Live countdown (student, during attempt) */}
         {hasTimeLimit && endAtRef.current && (
           <div
             className={`px-3 py-2 rounded border ${
@@ -321,7 +338,6 @@ export default function TakeQuiz() {
         )}
       </div>
 
-      {/* Status only in real take mode */}
       {!isPreview && !!lastAttempt && (
         <Alert variant="light" className="border d-flex justify-content-between align-items-center">
           <div>
@@ -340,9 +356,8 @@ export default function TakeQuiz() {
         {visibleQuestions.map((q) => {
           if (!q) return null;
           const ans = currentAnswers[q._id];
-          const showCheck = resultMode; // never in preview
+          const showCheck = resultMode;
           const correct = showCheck ? isCorrect(q, ans) : undefined;
-          const choices = getDisplayChoices(q);
 
           return (
             <li key={q._id} className="mb-4">
@@ -356,13 +371,11 @@ export default function TakeQuiz() {
                     : "transparent",
                 }}
               >
-                {/* prompt */}
                 {q.prompt && <div dangerouslySetInnerHTML={{ __html: q.prompt }} />}
 
-                {/* type renderers */}
                 {q.type === "MC" && (
                   <div className="mt-2 d-flex flex-column gap-2">
-                    {choices.map((c) => (
+                    {getDisplayChoices(q).map((c) => (
                       <Form.Check
                         key={c._id}
                         disabled={viewOnly || showCheck || isPreview}
@@ -397,23 +410,37 @@ export default function TakeQuiz() {
                   </div>
                 )}
 
-                {q.type === "FIB" && (
-                  <div className="mt-2" style={{ maxWidth: 360 }}>
-                    <Form.Control
-                      disabled={viewOnly || showCheck || isPreview}
-                      placeholder="Your answer"
-                      value={ans ?? ""}
-                      onChange={(e) => setAns(q._id, e.target.value)}
-                    />
-                    {showCheck && (
-                      <div className="small text-secondary mt-2">
-                        Accepted answers: {normalizeFibList(q).join(", ") || "—"}
-                      </div>
-                    )}
-                  </div>
-                )}
+                {q.type === "FIB" && (() => {
+                  const blanks = Math.max(1, countBlanksInPrompt(q.prompt || q.title || ""));
+                  const arr: string[] = Array.isArray(ans)
+                    ? ans.map((s: any) => String(s ?? ""))
+                    : Array.from({ length: blanks }, () => String(ans ?? ""));
+                  return (
+                    <div className="mt-2 d-flex flex-column gap-2" style={{ maxWidth: 520 }}>
+                      {Array.from({ length: blanks }, (_, i) => (
+                        <Form.Control
+                          key={i}
+                          disabled={viewOnly || showCheck || isPreview}
+                          placeholder={`Blank ${i + 1}`}
+                          value={arr[i] ?? ""}
+                          onChange={(e) => {
+                            const next = [...arr];
+                            next[i] = e.target.value;
+                            setAns(q._id, next); // <-- store ARRAY per blank
+                          }}
+                        />
+                      ))}
+                      {showCheck && (
+                        <div className="small text-secondary mt-2">
+                          {acceptedByBlank(q).map((acc, i) => (
+                            <div key={i}>Blank {i + 1} accepted: {acc.join(" | ") || "—"}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
-                {/* correctness label */}
                 {showCheck && (
                   <div className={`mt-2 small ${correct ? "text-success" : "text-danger"}`}>
                     {correct ? "Correct" : "Incorrect"}
@@ -425,7 +452,7 @@ export default function TakeQuiz() {
         })}
       </ol>
 
-      {/* Footer actions */}
+      {/* Footer */}
       <div className="d-flex justify-content-between align-items-center mt-4 pt-3 border-top">
         <Link
           to={`/Kambaz/Courses/${cid}/Quizzes/${qid}${isPreview ? "/edit" : ""}`}
@@ -435,28 +462,25 @@ export default function TakeQuiz() {
         </Link>
 
         <div className="d-flex gap-2">
-          {/* Paging only during attempt (not preview, not result) */}
-          {oneAtATime && !resultMode && !isPreview && currentIndex > 0 && (
+          {quiz?.settings?.oneQuestionAtATime && !resultMode && !isPreview && currentIndex > 0 && (
             <Button variant="secondary" onClick={() => setCurrentIndex((i) => i - 1)}>
               Previous
             </Button>
           )}
-          {oneAtATime && !resultMode && !isPreview && currentIndex < questions.length - 1 && (
+          {quiz?.settings?.oneQuestionAtATime && !resultMode && !isPreview && currentIndex < questions.length - 1 && (
             <Button variant="secondary" onClick={() => setCurrentIndex((i) => i + 1)}>
               Next
             </Button>
           )}
 
-          {/* Submit button only during real attempt (and only on last item for 1-at-a-time) */}
           {!isPreview &&
             !resultMode &&
-            (!oneAtATime || currentIndex === questions.length - 1) && (
-              <Button variant="danger" disabled={submitting} onClick={() => submit(false)} title="Submit your attempt">
+            (!quiz?.settings?.oneQuestionAtATime || currentIndex === questions.length - 1) && (
+              <Button variant="danger" disabled={submitting} onClick={() => submit(false)}>
                 {submitting ? "Submitting…" : "Submit Quiz"}
               </Button>
             )}
 
-          {/* After submit: allow retake if any attempts remain */}
           {!isPreview &&
             resultMode &&
             (attemptsInfo.remaining > 0 ? (
@@ -466,9 +490,8 @@ export default function TakeQuiz() {
                   setAnswers({});
                   setLastAttempt(null);
                   setCurrentIndex(0);
-                  choiceOrderRef.current = {}; // clear old order
-                  setShuffleEpoch((e) => e + 1); // force new shuffle set
-                  // reset timer for new attempt if time limit is set
+                  choiceOrderRef.current = {};
+                  setShuffleEpoch((e) => e + 1);
                   const tl = Number(quiz?.settings?.timeLimitMin || 0);
                   if (tl > 0) {
                     endAtRef.current = Date.now() + tl * 60_000;

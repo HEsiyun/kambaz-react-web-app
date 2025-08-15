@@ -18,9 +18,13 @@ export type Question = {
   // MC
   choices?: Choice[];
   // TF
-  answer?: boolean;           // <<< was correctBoolean
-  // FIB
-  answers?: string[];         // <<< was acceptableAnswers
+  answer?: boolean;            // client name (server: correctBoolean)
+  // FIB (legacy single-blank)
+  answers?: string[];          // server: acceptableAnswers
+  // FIB (multi-blank authoring)
+  blanks?: { id?: string; answers: string[] }[];
+  // server may return:
+  acceptableAnswersByBlank?: string[][];
 };
 
 export const findByQuiz = async (qid: string): Promise<Question[]> =>

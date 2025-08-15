@@ -1,4 +1,3 @@
-// src/Kambaz/Courses/Quizzes/QuestionCard.tsx
 import { useEffect, useMemo, useState } from "react";
 import { Button, Form, InputGroup } from "react-bootstrap";
 import { BsTrash, BsPlus } from "react-icons/bs";
@@ -6,6 +5,10 @@ import { BsTrash, BsPlus } from "react-icons/bs";
 /* ---------- Types (aligned with your UI model) ---------- */
 type Choice = { _id: string; text: string; isCorrect?: boolean };
 
+/** Extended Question type:
+ * - Keeps legacy `answers?: string[]` for 1-blank quizzes
+ * - Adds optional `blanks?: { id: string; answers: string[] }[]` for multi-blank authoring
+ */
 export type Question = {
   _id: string;
   quiz: string;
@@ -15,7 +18,8 @@ export type Question = {
   prompt: string;      // HTML
   choices?: Choice[];  // MC
   answer?: boolean;    // TF (client name)
-  answers?: string[];  // FIB (client name)
+  answers?: string[];  // FIB (legacy single-blank)
+  blanks?: { id: string; answers: string[] }[]; // FIB (multi-blank authoring)
 };
 
 export type QuestionCardProps = {
@@ -78,6 +82,7 @@ const rid = () =>
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2);
 
+/** Normalize incoming question into an editable draft for the selected type */
 function normalizeForType(q: Question): Question {
   if (q.type === "MC") {
     const base =
@@ -88,17 +93,34 @@ function normalizeForType(q: Question): Question {
             { _id: rid(), text: "Option 2" },
           ];
     if (!base.some((c) => c.isCorrect)) base[0].isCorrect = true;
-    return { ...q, choices: base, answer: undefined, answers: undefined };
+    return { ...q, choices: base, answer: undefined, answers: undefined, blanks: undefined };
   }
   if (q.type === "TF") {
-    return { ...q, answer: q.answer ?? false, choices: undefined, answers: undefined };
+    return { ...q, answer: q.answer ?? false, choices: undefined, answers: undefined, blanks: undefined };
   }
-  const cleaned = (q.answers ?? [""]).map((s) => (s ?? "").trim());
+  // FIB
+  // Prefer multi-blank if present (server could have acceptableAnswersByBlank)
+  const serverMulti: string[][] | undefined = (q as any).acceptableAnswersByBlank;
+  const blanks =
+    q.blanks ??
+    (serverMulti
+      ? serverMulti.map((a) => ({ id: rid(), answers: a }))
+      : [{ id: rid(), answers: (q.answers ?? [""]).map((s) => (s ?? "").trim()) }]);
+
+  // Guarantee at least one blank and at least one (possibly empty) answer per blank
+  const safe = blanks.length ? blanks : [{ id: rid(), answers: [""] }];
+  const safeBlanks = safe.map((b) => ({
+    id: b.id || rid(),
+    answers: (b.answers && b.answers.length ? b.answers : [""]).map((s) => (s ?? "")),
+  }));
+
   return {
     ...q,
-    answers: cleaned.length ? cleaned : [""],
+    blanks: safeBlanks,
     choices: undefined,
     answer: undefined,
+    // keep legacy `answers` in sync with first blank for compatibility
+    answers: safeBlanks[0].answers,
   };
 }
 
@@ -158,34 +180,84 @@ export default function QuestionCard({
     setDraft({ ...draft, choices: next });
   };
 
+  /* ---------- FIB helpers (multi-blank) ---------- */
+  const addBlank = () => {
+    const blanks = draft.blanks ?? [];
+    setDraft({ ...draft, blanks: [...blanks, { id: rid(), answers: [""] }] });
+  };
+
+  const removeBlank = (idx: number) => {
+    const blanks = draft.blanks ?? [];
+    if (blanks.length <= 1) return; // keep at least one
+    const next = blanks.filter((_, i) => i !== idx);
+    setDraft({
+      ...draft,
+      blanks: next.length ? next : [{ id: rid(), answers: [""] }],
+      answers: (next[0]?.answers ?? [""]),
+    });
+  };
+
+  const updateBlankAnswer = (bIndex: number, aIndex: number, value: string) => {
+    const blanks = draft.blanks ?? [];
+    blanks[bIndex].answers[aIndex] = value;
+    setDraft({ ...draft, blanks: [...blanks], answers: blanks[0]?.answers });
+  };
+
+  const addAnswerToBlank = (bIndex: number) => {
+    const blanks = draft.blanks ?? [];
+    blanks[bIndex].answers = [...blanks[bIndex].answers, ""];
+    setDraft({ ...draft, blanks: [...blanks], answers: blanks[0]?.answers });
+  };
+
+  const removeAnswerFromBlank = (bIndex: number, aIndex: number) => {
+    const blanks = draft.blanks ?? [];
+    const answers = blanks[bIndex].answers;
+    if (answers.length <= 1) return;
+    blanks[bIndex].answers = answers.filter((_, i) => i !== aIndex);
+    setDraft({ ...draft, blanks: [...blanks], answers: blanks[0]?.answers });
+  };
+
   /* ---------- Body by type ---------- */
   const body = useMemo(() => {
     if (!editing) {
-      const fibViewAnswers =
-        (q.answers && q.answers.length ? q.answers : (q as any).acceptableAnswers) ?? [];
+      // Read multi-blank if available; else fallback to legacy list
+      const byBlank: string[][] =
+        (q as any).acceptableAnswersByBlank ??
+        q.blanks?.map((b) => b.answers) ??
+        (q.answers ? [q.answers] : []);
 
       return (
         <>
           <div dangerouslySetInnerHTML={{ __html: q.prompt || "" }} />
-        {q.type === "MC" && q.choices && q.choices.length > 0 && (
-          <ul className="mt-2 mb-0">
-            {q.choices.map((c) => (
-              <li key={c._id}>
-                {c.text} {c.isCorrect ? "✓" : ""}
-              </li>
-            ))}
-          </ul>
-        )}
-        {q.type === "TF" && (
-          <div className="text-secondary small mt-2">
-            Correct: {q.answer ? "True" : "False"}
-          </div>
-        )}
-        {q.type === "FIB" && (
-          <div className="text-secondary small mt-2">
-            Accepted answers: {fibViewAnswers.filter(Boolean).join(", ") || "—"}
-          </div>
-        )}
+          {q.type === "MC" && q.choices && q.choices.length > 0 && (
+            <ul className="mt-2 mb-0">
+              {q.choices.map((c) => (
+                <li key={c._id}>
+                  {c.text} {c.isCorrect ? "✓" : ""}
+                </li>
+              ))}
+            </ul>
+          )}
+          {q.type === "TF" && (
+            <div className="text-secondary small mt-2">
+              Correct: {q.answer ? "True" : "False"}
+            </div>
+          )}
+          {q.type === "FIB" && (
+            <div className="text-secondary small mt-2">
+              {byBlank.length === 0 ? (
+                <>Accepted answers: —</>
+              ) : (
+                <ul className="mb-0">
+                  {byBlank.map((arr, idx) => (
+                    <li key={idx}>
+                      Blank {idx + 1}: {arr.filter(Boolean).join(", ") || "—"}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </>
       );
     }
@@ -308,8 +380,8 @@ export default function QuestionCard({
       );
     }
 
-    // FIB
-    const answers = draft.answers ?? [""];
+    // ===== FIB (multi-blank editor) =====
+    const blanks = draft.blanks ?? [{ id: rid(), answers: [""] }];
     return (
       <>
         <Form.Group className="mb-2">
@@ -317,52 +389,78 @@ export default function QuestionCard({
           <RichTextEditor
             value={draft.prompt || "<p></p>"}
             onChange={(html) => setDraft({ ...draft, prompt: html })}
-            placeholder="Ask a question with a blank the student fills…"
+            placeholder="Ask a question. Use underscores ____ in the text where blanks will appear."
           />
         </Form.Group>
 
-        <Form.Label className="mt-3">Accepted answers</Form.Label>
-        <div className="d-flex flex-column gap-2">
-          {answers.map((ans, idx) => (
-            <InputGroup key={idx}>
-              <Form.Control
-                placeholder={`Answer ${idx + 1}`}
-                value={ans}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    answers: answers.map((x, i) => (i === idx ? e.target.value : x)),
-                  })
-                }
-                onBlur={() =>
-                  setDraft((d) => ({
-                    ...d,
-                    answers: (d.answers ?? [])
-                      .map((s) => (s ?? "").trim())
-                      .filter((s, _i, arr) => s.length > 0 || arr.length === 1),
-                  }))
-                }
-              />
+        <div className="d-flex align-items-center mt-3 mb-2">
+          <div className="fw-semibold">Blanks & accepted answers</div>
+          <Button
+            size="sm"
+            variant="outline-secondary"
+            className="ms-auto"
+            onClick={addBlank}
+          >
+            + Add blank
+          </Button>
+        </div>
+
+        <div className="d-flex flex-column gap-3">
+          {blanks.map((b, bIndex) => (
+            <div key={b.id} className="p-2 border rounded bg-white">
+              <div className="d-flex align-items-center mb-2">
+                <div className="fw-semibold">Blank {bIndex + 1}</div>
+                <Button
+                  variant="outline-danger"
+                  size="sm"
+                  className="ms-auto"
+                  disabled={blanks.length <= 1}
+                  onClick={() => removeBlank(bIndex)}
+                >
+                  Remove blank
+                </Button>
+              </div>
+
+              {(b.answers ?? [""]).map((ans, aIndex) => (
+                <InputGroup className="mb-2" key={`${b.id}-${aIndex}`}>
+                  <Form.Control
+                    placeholder={`Accepted answer ${aIndex + 1}`}
+                    value={ans}
+                    onChange={(e) => updateBlankAnswer(bIndex, aIndex, e.target.value)}
+                    onBlur={() => {
+                      // trim empties but keep at least one
+                      const trimmed = (draft.blanks ?? []).map((bb, i) =>
+                        i !== bIndex
+                          ? bb
+                          : {
+                              ...bb,
+                              answers: bb.answers
+                                .map((s) => (s ?? "").trim())
+                                .filter((s, _, arr) => s.length > 0 || arr.length === 1),
+                            }
+                      );
+                      setDraft({ ...draft, blanks: trimmed, answers: trimmed[0]?.answers });
+                    }}
+                  />
+                  <Button
+                    variant="outline-danger"
+                    disabled={(b.answers ?? [""]).length <= 1}
+                    onClick={() => removeAnswerFromBlank(bIndex, aIndex)}
+                  >
+                    Remove
+                  </Button>
+                </InputGroup>
+              ))}
+
               <Button
-                variant="outline-danger"
-                onClick={() =>
-                  setDraft({ ...draft, answers: answers.filter((_, i) => i !== idx) })
-                }
-                disabled={answers.length <= 1}
+                size="sm"
+                variant="outline-secondary"
+                onClick={() => addAnswerToBlank(bIndex)}
               >
-                Remove
+                + Add answer to blank {bIndex + 1}
               </Button>
-            </InputGroup>
+            </div>
           ))}
-          <div>
-            <Button
-              size="sm"
-              variant="outline-secondary"
-              onClick={() => setDraft({ ...draft, answers: [...answers, ""] })}
-            >
-              + Add answer
-            </Button>
-          </div>
         </div>
       </>
     );
@@ -448,16 +546,19 @@ export default function QuestionCard({
               <Button
                 variant="danger"
                 onClick={() => {
-                  const cleaned =
-                    draft.type === "FIB"
-                      ? {
-                          ...draft,
-                          answers: (draft.answers ?? [])
-                            .map((s) => (s ?? "").trim())
-                            .filter((s) => s.length > 0),
-                        }
-                      : draft;
-                  onSave(normalizeForType(cleaned));
+                  // Clean up blanks: trim whitespace and ensure invariants
+                  const blanks = (draft.blanks ?? [{ id: rid(), answers: [""] }]).map((b) => ({
+                    ...b,
+                    answers: (b.answers ?? [])
+                      .map((s) => (s ?? "").trim())
+                      .filter((s, _i, arr) => s.length > 0 || arr.length === 1),
+                  }));
+                  const cleaned: Question = {
+                    ...draft,
+                    blanks,
+                    answers: blanks[0]?.answers ?? [""], // keep legacy in sync
+                  };
+                  onSave(cleaned);
                   setEditing(false);
                   onDraftChange?.(null);
                 }}

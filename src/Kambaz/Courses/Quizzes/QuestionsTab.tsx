@@ -19,7 +19,8 @@ export type Question = {
   prompt: string;
   choices?: Choice[];          // MC
   answer?: boolean;            // TF (client field)
-  answers?: string[];          // FIB (client field)
+  answers?: string[];          // FIB legacy (one blank)
+  blanks?: { id: string; answers: string[] }[]; // FIB multi-blank
 };
 
 const HTTP_SERVER =
@@ -61,12 +62,16 @@ const toServerPayload = (q: Question): any => {
     };
   }
 
-  // FIB
+  // FIB — support multi-blank while keeping legacy single-blank
+  const blanks = (q.blanks ?? [{ id: uid(), answers: q.answers ?? [] }]).map((b) =>
+    (b.answers ?? []).map((s) => (s ?? "").trim()).filter(Boolean)
+  );
+  const firstBlank = blanks[0] ?? [];
+
   return {
     ...base,
-    acceptableAnswers: (q.answers ?? [])
-      .map((s) => (s ?? "").trim())
-      .filter((s) => s.length > 0),
+    acceptableAnswersByBlank: blanks,  // new multi-blank-aware field
+    acceptableAnswers: firstBlank,     // legacy compatibility
   };
 };
 
