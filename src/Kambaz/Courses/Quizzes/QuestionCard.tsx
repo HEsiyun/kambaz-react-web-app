@@ -16,8 +16,6 @@ export type Question = {
   choices?: Choice[];  // MC
   answer?: boolean;    // TF (client name)
   answers?: string[];  // FIB (client name)
-  // tolerant fallback fields if API returns server names
-  // (we don't declare them in the type, but we'll read via any-safety)
 };
 
 export type QuestionCardProps = {
@@ -95,7 +93,6 @@ function normalizeForType(q: Question): Question {
   if (q.type === "TF") {
     return { ...q, answer: q.answer ?? false, choices: undefined, answers: undefined };
   }
-  // FIB
   const cleaned = (q.answers ?? [""]).map((s) => (s ?? "").trim());
   return {
     ...q,
@@ -164,32 +161,31 @@ export default function QuestionCard({
   /* ---------- Body by type ---------- */
   const body = useMemo(() => {
     if (!editing) {
-      // tolerate server field names on read (global save path)
       const fibViewAnswers =
         (q.answers && q.answers.length ? q.answers : (q as any).acceptableAnswers) ?? [];
 
       return (
         <>
           <div dangerouslySetInnerHTML={{ __html: q.prompt || "" }} />
-          {q.type === "MC" && q.choices && q.choices.length > 0 && (
-            <ul className="mt-2 mb-0">
-              {q.choices.map((c) => (
-                <li key={c._id}>
-                  {c.text} {c.isCorrect ? "✓" : ""}
-                </li>
-              ))}
-            </ul>
-          )}
-          {q.type === "TF" && (
-            <div className="text-secondary small mt-2">
-              Correct: {q.answer ? "True" : "False"}
-            </div>
-          )}
-          {q.type === "FIB" && (
-            <div className="text-secondary small mt-2">
-              Accepted answers: {fibViewAnswers.filter(Boolean).join(", ") || "—"}
-            </div>
-          )}
+        {q.type === "MC" && q.choices && q.choices.length > 0 && (
+          <ul className="mt-2 mb-0">
+            {q.choices.map((c) => (
+              <li key={c._id}>
+                {c.text} {c.isCorrect ? "✓" : ""}
+              </li>
+            ))}
+          </ul>
+        )}
+        {q.type === "TF" && (
+          <div className="text-secondary small mt-2">
+            Correct: {q.answer ? "True" : "False"}
+          </div>
+        )}
+        {q.type === "FIB" && (
+          <div className="text-secondary small mt-2">
+            Accepted answers: {fibViewAnswers.filter(Boolean).join(", ") || "—"}
+          </div>
+        )}
         </>
       );
     }
@@ -388,11 +384,17 @@ export default function QuestionCard({
           />
         )}
 
-        <InputGroup style={{ width: 140 }} className="ms-2">
+        {/* WIDER, non-shrinking Points field */}
+        <InputGroup
+          className="ms-2 flex-shrink-0"
+          style={{ minWidth: 220, width: 240, maxWidth: "35vw" }}
+        >
           <InputGroup.Text>Points</InputGroup.Text>
           <Form.Control
             type="number"
             min={0}
+            step={1}
+            inputMode="numeric"
             value={editing ? draft.points : q.points}
             onChange={(e) =>
               editing ? setDraft({ ...draft, points: Number(e.target.value) || 0 }) : undefined
@@ -406,7 +408,7 @@ export default function QuestionCard({
             editing ? setDraft({ ...draft, type: e.target.value as Question["type"] }) : undefined
           }
           className="ms-2"
-          style={{ width: 170 }}
+          style={{ width: 180 }}
           disabled={!editing}
         >
           <option value="MC">Multiple Choice</option>
