@@ -1,6 +1,6 @@
 // src/Kambaz/Courses/Quizzes/Editor.tsx
 import { useEffect, useMemo, useState } from "react";
-import { Button, Col, Form, Nav, Row, Spinner } from "react-bootstrap";
+import { Button, Col, Form, Nav, Row, Spinner, InputGroup } from "react-bootstrap";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 
@@ -57,7 +57,11 @@ export default function QuizEditor() {
     useState<NonNullable<Quiz["assignmentGroup"]>>("Quizzes");
 
   const [shuffleAnswers, setShuffleAnswers] = useState(true);
-  const [timeLimitMin, setTimeLimitMin] = useState(20);
+
+  // NEW: checkbox to enable/disable time limit + minutes
+  const [hasTimeLimit, setHasTimeLimit] = useState(false);
+  const [timeLimitMin, setTimeLimitMin] = useState(20); // default minutes IF enabled
+
   const [multipleAttempts, setMultipleAttempts] = useState(false);
   const [attemptsAllowed, setAttemptsAllowed] = useState(1);
   const [showCorrectAfter, setShowCorrectAfter] =
@@ -90,7 +94,12 @@ export default function QuizEditor() {
         setGroup(quiz.assignmentGroup ?? "Quizzes");
 
         setShuffleAnswers(quiz.settings?.shuffleAnswers ?? true);
-        setTimeLimitMin(quiz.settings?.timeLimitMin ?? 20);
+
+        // Time limit: treat 0/undefined as "no time limit" (default OFF)
+        const serverTL = Number(quiz.settings?.timeLimitMin || 0);
+        setHasTimeLimit(serverTL > 0);
+        setTimeLimitMin(serverTL > 0 ? serverTL : 20); // keep a sensible default if turned on
+
         setMultipleAttempts(quiz.settings?.multipleAttempts ?? false);
         setAttemptsAllowed(quiz.settings?.attemptsAllowed ?? 1);
         setShowCorrectAfter(quiz.settings?.showCorrectAfter ?? "NEVER");
@@ -116,7 +125,8 @@ export default function QuizEditor() {
     };
   }, [api, qid]);
 
-  // Build payload, omitting empty strings & attempts when not needed
+  // Build payload, omitting empty strings & attempts when not needed.
+  // For time limit: send 0 when disabled.
   const buildPayload = (): Partial<Quiz> => {
     const dates: any = {};
     if (availableFrom) dates.availableFrom = availableFrom;
@@ -125,7 +135,7 @@ export default function QuizEditor() {
 
     const baseSettings: QuizSettings = {
       shuffleAnswers,
-      timeLimitMin: Number(timeLimitMin) || 0,
+      timeLimitMin: hasTimeLimit ? Math.max(1, Number(timeLimitMin) || 0) : 0,
       multipleAttempts,
       showCorrectAfter,
       accessCode,
@@ -134,7 +144,7 @@ export default function QuizEditor() {
       lockAfterAnswering,
     };
     if (multipleAttempts) {
-      baseSettings.attemptsAllowed = Number(attemptsAllowed) || 1;
+      baseSettings.attemptsAllowed = Math.max(1, Number(attemptsAllowed) || 1);
     }
 
     return {
@@ -169,7 +179,6 @@ export default function QuizEditor() {
   };
 
   const handleCancel = () => {
-    // Always go back to the course's quiz list (not browser back)
     navigate(`/Kambaz/Courses/${cid}/Quizzes`);
   };
 
@@ -218,7 +227,6 @@ export default function QuizEditor() {
 
         <Form.Group className="mb-4">
           <Form.Label>Description</Form.Label>
-          {/* Plain textarea (rubric allows WYSIWYG or textarea) */}
           <Form.Control
             as="textarea"
             rows={6}
@@ -271,32 +279,48 @@ export default function QuizEditor() {
               />
             </Form.Group>
 
-            <Row className="mb-3">
-              <Col>
-                <Form.Label>Time Limit (minutes)</Form.Label>
+            {/* Time limit: checkbox + minutes input */}
+            <Form.Group className="mb-3">
+              <Form.Check
+                type="checkbox"
+                id="qs-timelimit"
+                label="Time limit"
+                checked={hasTimeLimit}
+                onChange={(e) => setHasTimeLimit(e.target.checked)}
+              />
+              <InputGroup className="mt-2" style={{ maxWidth: 240 }}>
                 <Form.Control
                   type="number"
-                  min={0}
-                  value={timeLimitMin}
-                  onChange={(e) => setTimeLimitMin(+e.target.value)}
+                  min={1}
+                  disabled={!hasTimeLimit}
+                  value={hasTimeLimit ? timeLimitMin : ""}
+                  placeholder="Minutes"
+                  onChange={(e) => setTimeLimitMin(Math.max(1, +e.target.value || 1))}
                 />
-              </Col>
-              <Col>
-                <Form.Label>Show Correct Answers</Form.Label>
-                <Form.Select
-                  value={showCorrectAfter}
-                  onChange={(e) =>
-                    setShowCorrectAfter(
-                      e.target.value as QuizSettings["showCorrectAfter"]
-                    )
-                  }
-                >
-                  <option value="NEVER">Never</option>
-                  <option value="IMMEDIATELY">Immediately</option>
-                  <option value="AFTER_DUE">After Due Date</option>
-                </Form.Select>
-              </Col>
-            </Row>
+                <InputGroup.Text>minutes</InputGroup.Text>
+              </InputGroup>
+              <div className="small text-secondary mt-1">
+                {hasTimeLimit
+                  ? "Students will see a live countdown and the quiz will auto-submit when time runs out."
+                  : "No time limit."}
+              </div>
+            </Form.Group>
+
+            <Form.Group className="mb-3">
+              <Form.Label>Show Correct Answers</Form.Label>
+              <Form.Select
+                value={showCorrectAfter}
+                onChange={(e) =>
+                  setShowCorrectAfter(
+                    e.target.value as QuizSettings["showCorrectAfter"]
+                  )
+                }
+              >
+                <option value="NEVER">Never</option>
+                <option value="IMMEDIATELY">Immediately</option>
+                <option value="AFTER_DUE">After Due Date</option>
+              </Form.Select>
+            </Form.Group>
 
             <Form.Group className="mb-3">
               <Form.Label>Access Code</Form.Label>

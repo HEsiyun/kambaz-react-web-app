@@ -8,7 +8,7 @@ import type { RootState } from "../../store";
 import { getMyLastAttempt, listMyAttempts } from "./attemptsClient";
 
 type QuizSettings = {
-  shuffleAnswers?: boolean;
+  shuffleAnswers?: boolean;           // ← add this so we can display it
   timeLimitMin?: number;
   multipleAttempts?: boolean;
   attemptsAllowed?: number;
