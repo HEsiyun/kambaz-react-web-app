@@ -6,6 +6,7 @@ import { Button } from "react-bootstrap";
 import type { RootState, AppDispatch } from "../../store";
 import { questionThunks } from "./questionsReducer";
 import QuestionCard from "./QuestionCard";
+import axios from "axios";
 
 /** Types aligned with UI (client) */
 type Choice = { _id: string; text: string; isCorrect?: boolean };
@@ -20,6 +21,10 @@ export type Question = {
   answer?: boolean;            // TF (client field)
   answers?: string[];          // FIB (client field)
 };
+
+const HTTP_SERVER =
+  (import.meta as any).env?.VITE_HTTP_SERVER ?? "http://localhost:4000";
+const api = axios.create({ baseURL: HTTP_SERVER, withCredentials: true });
 
 const uid = () =>
   (typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -52,7 +57,7 @@ const toServerPayload = (q: Question): any => {
   if (q.type === "TF") {
     return {
       ...base,
-      correctBoolean: !!q.answer, // <-- server name
+      correctBoolean: !!q.answer,
     };
   }
 
@@ -61,7 +66,7 @@ const toServerPayload = (q: Question): any => {
     ...base,
     acceptableAnswers: (q.answers ?? [])
       .map((s) => (s ?? "").trim())
-      .filter((s) => s.length > 0), // <-- server name
+      .filter((s) => s.length > 0),
   };
 };
 
@@ -74,15 +79,25 @@ export default function QuestionsTab() {
     (s: RootState) => s.questionsReducer
   ) as { items: Question[]; loading: boolean };
 
+  /** Quiz metadata */
+  const [quiz, setQuiz] = useState<{ published?: boolean } | null>(null);
+
   /** Local drafts for NEW questions only (not yet saved to server) */
   const [drafts, setDrafts] = useState<Question[]>([]);
 
+  /** Loading states for buttons */
+  const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+
   useEffect(() => {
-    if (qid) dispatch(questionThunks.fetchByQuiz(qid));
-    setDrafts([]); // reset drafts if quiz changes
+    if (qid) {
+      dispatch(questionThunks.fetchByQuiz(qid));
+      api.get(`/api/quizzes/${qid}`).then((res) => setQuiz(res.data));
+    }
+    setDrafts([]);
   }, [qid, dispatch]);
 
-  /** Add a NEW question as a local draft (no API yet) */
+  /** Add a NEW question as a local draft */
   const addNew = () => {
     if (!qid) return;
     setDrafts((ds) => [
@@ -102,19 +117,18 @@ export default function QuestionsTab() {
     ]);
   };
 
-  /** Footer Cancel: discard drafts and go back to Quiz Details editor */
+  /** Cancel: discard drafts and go back to Quiz Details editor */
   const bottomCancel = () => {
     setDrafts([]);
     navigate(`/Kambaz/Courses/${cid}/Quizzes/${qid}/edit`);
   };
 
-  /** Persist ALL local drafts as creates, then refresh */
+  /** Persist ALL local drafts as creates */
   const saveDrafts = async () => {
     if (!qid || drafts.length === 0) return;
     await Promise.all(
       drafts.map((d) =>
         dispatch(
-          // IMPORTANT: send server field names
           questionThunks.createQuestion(toServerPayload(d))
         )
       )
@@ -123,13 +137,33 @@ export default function QuestionsTab() {
     dispatch(questionThunks.fetchByQuiz(qid));
   };
 
+  /** Save only */
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await saveDrafts();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /** Save & Publish */
+  const handleSaveAndPublish = async () => {
+    setPublishing(true);
+    try {
+      await saveDrafts();
+      await api.put(`/api/quizzes/${qid}`, { published: true });
+      setQuiz((q) => ({ ...q, published: true }));
+    } finally {
+      setPublishing(false);
+    }
+  };
+
   /** When an individual card saves */
   const handleCardSave = (q: Question) => {
     if (isTemp(q._id)) {
-      // update the local draft only (not persisted until global Save)
       setDrafts((ds) => ds.map((d) => (d._id === q._id ? q : d)));
     } else {
-      // existing question -> save immediately to server (server field names)
       dispatch(questionThunks.updateQuestion({ _id: q._id, ...toServerPayload(q) } as any));
     }
   };
@@ -143,7 +177,7 @@ export default function QuestionsTab() {
     }
   };
 
-  /** Keep local draft in sync while user edits */
+  /** Keep local draft in sync while editing */
   const handleDraftChange = (draft: Question | null, id: string) => {
     if (!isTemp(id) || !draft) return;
     setDrafts((ds) => ds.map((d) => (d._id === id ? { ...d, ...draft } : d)));
@@ -167,8 +201,6 @@ export default function QuestionsTab() {
       <div className="d-flex align-items-center mb-3">
         <h5 className="mb-0">Questions</h5>
         <div className="ms-3 text-secondary">Points: {totalPoints}</div>
-
-        {/* Always show New Question at the top */}
         <Button className="ms-auto" variant="danger" size="sm" onClick={addNew}>
           New Question
         </Button>
@@ -189,7 +221,6 @@ export default function QuestionsTab() {
         ))}
       </ul>
 
-      {/* Empty-state center CTA when nothing at all */}
       {!loading && rows.length === 0 && (
         <div className="text-center py-5">
           <Button variant="light" className="border px-4 py-2" onClick={addNew}>
@@ -198,13 +229,33 @@ export default function QuestionsTab() {
         </div>
       )}
 
-      {/* Footer: the ONLY global Save/Cancel */}
+      {/* Footer */}
       <div className="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
-        <Button variant="light" className="border" onClick={bottomCancel}>
+        <Button
+          variant="light"
+          className="border"
+          onClick={bottomCancel}
+          disabled={saving || publishing}
+        >
           Cancel
         </Button>
-        <Button variant="danger" onClick={saveDrafts} disabled={!hasDrafts}>
-          Save
+        <Button
+          variant="secondary"
+          onClick={handleSave}
+          disabled={saving || publishing || !hasDrafts}
+        >
+          {saving ? "Saving…" : "Save"}
+        </Button>
+        <Button
+          variant="danger"
+          onClick={handleSaveAndPublish}
+          disabled={
+            publishing ||
+            saving ||
+            (quiz?.published && !hasDrafts)
+          }
+        >
+          {publishing ? "Publishing…" : (quiz?.published && !hasDrafts ? "Published" : "Save & Publish")}
         </Button>
       </div>
     </div>
