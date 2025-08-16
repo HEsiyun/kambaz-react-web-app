@@ -124,7 +124,7 @@ export default function TakeQuiz() {
   const [submitting, setSubmitting] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
 
-  // choice order for MC/TF shuffling
+  // choice order for MC shuffling
   const choiceOrderRef = useRef<Record<string, string[]>>({});
   const [shuffleEpoch, setShuffleEpoch] = useState(0);
 
@@ -132,6 +132,11 @@ export default function TakeQuiz() {
   const endAtRef = useRef<number | null>(null);
   const [remainingMs, setRemainingMs] = useState<number>(0);
   const [expired, setExpired] = useState(false);
+
+  // NEW: lock-after-answering state
+  // highest index that has been answered and then advanced past
+  const [lockedMaxIndex, setLockedMaxIndex] = useState<number>(-1);
+  const [lockNotice, setLockNotice] = useState<string | null>(null);
 
   // Load quiz + questions + attempts (not in preview)
   useEffect(() => {
@@ -165,6 +170,8 @@ export default function TakeQuiz() {
         setAnswers({});
         setCurrentIndex(0);
         setShuffleEpoch((e) => e + 1);
+        setLockedMaxIndex(-1);
+        setLockNotice(null);
 
         // timer
         const tl = Number(qz?.settings?.timeLimitMin || 0);
@@ -252,7 +259,7 @@ export default function TakeQuiz() {
 
   const currentAnswers = lastAttempt?.answersByQid ?? answers;
 
-  /* ---------- Shuffle order for MC (and TF order if desired) ---------- */
+  /* ---------- Shuffle order for MC ---------- */
   const displayChoicesMap = useMemo(() => {
     const map: Record<string, Choice[]> = {};
     const shouldShuffle = !!quiz?.settings?.shuffleAnswers;
@@ -280,6 +287,40 @@ export default function TakeQuiz() {
   const getDisplayChoices = (q: Question): Choice[] => {
     if (q.type !== "MC") return q.choices ?? [];
     return displayChoicesMap[q._id] ?? (q.choices ?? []);
+  };
+
+  /* ---------- Helpers: lock-after-answering ---------- */
+  const oneAtATime = !!quiz?.settings?.oneQuestionAtATime;
+  const lockAfter = !!quiz?.settings?.lockAfterAnswering && oneAtATime;
+
+  const hasAnyAnswer = (q: Question, val: any): boolean => {
+    if (q.type === "MC") return !!val;
+    if (q.type === "TF") return typeof val === "boolean";
+    // FIB: array or string
+    if (Array.isArray(val)) return val.some((s) => String(s ?? "").trim().length > 0);
+    return String(val ?? "").trim().length > 0;
+  };
+
+  const tryGoPrev = () => {
+    if (!oneAtATime) return setCurrentIndex((i) => Math.max(0, i - 1));
+    const target = currentIndex - 1;
+    if (target < 0) return;
+    if (lockAfter && target <= lockedMaxIndex) {
+      setLockNotice("You can’t go back. This question was locked after you answered it.");
+      return;
+    }
+    setCurrentIndex(target);
+  };
+
+  const goNext = () => {
+    if (!oneAtATime) return;
+    const q = questions[currentIndex];
+    const ans = currentAnswers[q?._id || ""];
+    // If lock setting is on and the current has an answer, mark it locked
+    if (lockAfter && q && hasAnyAnswer(q, ans)) {
+      setLockedMaxIndex((idx) => Math.max(idx, currentIndex));
+    }
+    setCurrentIndex((i) => Math.min(questions.length - 1, i + 1));
   };
 
   /* ---------- Submit ---------- */
@@ -313,7 +354,6 @@ export default function TakeQuiz() {
   }
   if (!quiz) return <div className="p-3 text-danger">Quiz not found.</div>;
 
-  const oneAtATime = !!quiz.settings?.oneQuestionAtATime;
   const resultMode = !isPreview && !!lastAttempt;
   const visibleQuestions = oneAtATime && !resultMode ? [questions[currentIndex]] : questions;
 
@@ -337,6 +377,18 @@ export default function TakeQuiz() {
           </div>
         )}
       </div>
+
+      {/* Notice for lock-after-answering */}
+      {lockNotice && (
+        <Alert
+          variant="warning"
+          onClose={() => setLockNotice(null)}
+          dismissible
+          className="py-2"
+        >
+          {lockNotice}
+        </Alert>
+      )}
 
       {!isPreview && !!lastAttempt && (
         <Alert variant="light" className="border d-flex justify-content-between align-items-center">
@@ -371,10 +423,10 @@ export default function TakeQuiz() {
                     : "transparent",
                 }}
               >
-                {/* NEW: question header with title + points */}
+                {/* Title + points */}
                 <div className="d-flex justify-content-between align-items-center mb-2">
                   <div className="fw-semibold">
-                    {q.title?.trim() ? q.title : `Question ${idx + 1}`}
+                    {q.title?.trim() ? q.title : `Question ${oneAtATime ? currentIndex + 1 : idx + 1}`}
                   </div>
                   <div className="text-secondary small">
                     Points: <b>{Number(q.points) || 0}</b>
@@ -477,20 +529,21 @@ export default function TakeQuiz() {
         </Link>
 
         <div className="d-flex gap-2">
-          {quiz?.settings?.oneQuestionAtATime && !resultMode && !isPreview && currentIndex > 0 && (
-            <Button variant="secondary" onClick={() => setCurrentIndex((i) => i - 1)}>
+          {/* Previous: allow click, but block + show notice if locked */}
+          {oneAtATime && !resultMode && !isPreview && currentIndex > 0 && (
+            <Button variant="secondary" onClick={tryGoPrev}>
               Previous
             </Button>
           )}
-          {quiz?.settings?.oneQuestionAtATime && !resultMode && !isPreview && currentIndex < questions.length - 1 && (
-            <Button variant="secondary" onClick={() => setCurrentIndex((i) => i + 1)}>
+          {oneAtATime && !resultMode && !isPreview && currentIndex < questions.length - 1 && (
+            <Button variant="secondary" onClick={goNext}>
               Next
             </Button>
           )}
 
           {!isPreview &&
             !resultMode &&
-            (!quiz?.settings?.oneQuestionAtATime || currentIndex === questions.length - 1) && (
+            (!oneAtATime || currentIndex === questions.length - 1) && (
               <Button variant="danger" disabled={submitting} onClick={() => submit(false)}>
                 {submitting ? "Submitting…" : "Submit Quiz"}
               </Button>
@@ -507,6 +560,8 @@ export default function TakeQuiz() {
                   setCurrentIndex(0);
                   choiceOrderRef.current = {};
                   setShuffleEpoch((e) => e + 1);
+                  setLockedMaxIndex(-1);
+                  setLockNotice(null);
                   const tl = Number(quiz?.settings?.timeLimitMin || 0);
                   if (tl > 0) {
                     endAtRef.current = Date.now() + tl * 60_000;
