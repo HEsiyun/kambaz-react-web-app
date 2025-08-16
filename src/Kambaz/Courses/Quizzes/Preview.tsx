@@ -13,14 +13,18 @@ type Question = {
   title?: string;
   points: number;
   prompt?: string;
+
   // MC
   choices?: Choice[];
+
   // TF
   correctBoolean?: boolean;
+
   // FIB
-  acceptableAnswers?: string[];
-  caseInsensitive?: boolean;
-  trimInput?: boolean;
+  acceptableAnswers?: string[];          // flat list (legacy/single-blank or N items == N blanks)
+  acceptableAnswersByBlank?: string[][]; // grouped per blank (preferred)
+  caseInsensitive?: boolean;             // default true
+  trimInput?: boolean;                   // default true
 };
 
 type Quiz = { _id: string; course: string; title: string };
@@ -29,7 +33,32 @@ type Answers = {
   [questionId: string]:
     | { kind: "MC"; choiceId?: string }
     | { kind: "TF"; value?: boolean }
-    | { kind: "FIB"; value: string };
+    | { kind: "FIB"; values: string[] }; // <-- multiple blanks supported
+};
+
+/* ---------------- helpers (mirror student Take.tsx) ---------------- */
+
+const countBlanksInPrompt = (html?: string) =>
+  html ? (html.match(/__\s*\d+\s*__/g) || []).length : 0;
+
+// Normalize accepted answers grouped per blank
+const acceptedByBlank = (q: Question): string[][] => {
+  if (Array.isArray(q.acceptableAnswersByBlank) && q.acceptableAnswersByBlank.length) {
+    return q.acceptableAnswersByBlank.map((arr) =>
+      (arr || []).map((s) => String(s ?? "")).filter(Boolean)
+    );
+  }
+  const flat = (q.acceptableAnswers ?? []).map((s) => String(s ?? "")).filter(Boolean);
+  const blanks = countBlanksInPrompt(q.prompt || q.title || "");
+  if (blanks > 1 && flat.length === blanks) return flat.map((ans) => [ans]);
+  return [flat]; // single-blank fallback
+};
+
+const caseInsensitive = (q: Question) => q.caseInsensitive !== false;
+const trimInput = (q: Question) => q.trimInput !== false;
+const normWith = (q: Question) => (s: string) => {
+  const t = trimInput(q) ? String(s ?? "").trim() : String(s ?? "");
+  return caseInsensitive(q) ? t.toLowerCase() : t;
 };
 
 export default function QuizPreview() {
@@ -69,14 +98,19 @@ export default function QuizPreview() {
         ]);
         if (!alive) return;
 
+        const qs = qsres.data ?? [];
         setQuiz(qres.data);
-        setQuestions(qsres.data ?? []);
+        setQuestions(qs);
+
         // initialize empty answers
         const init: Answers = {};
-        (qsres.data ?? []).forEach((q) => {
+        qs.forEach((q) => {
           if (q.type === "MC") init[q._id] = { kind: "MC" };
           else if (q.type === "TF") init[q._id] = { kind: "TF" };
-          else init[q._id] = { kind: "FIB", value: "" };
+          else {
+            // FIB: start with an empty array; we'll size it dynamically for rendering
+            init[q._id] = { kind: "FIB", values: [] };
+          }
         });
         setAnswers(init);
         setIdx(0);
@@ -102,13 +136,25 @@ export default function QuizPreview() {
     setAnswers((a) => ({ ...a, [qid]: { kind: "MC", choiceId } }));
   const setTF = (qid: string, value: boolean) =>
     setAnswers((a) => ({ ...a, [qid]: { kind: "TF", value } }));
-  const setFIB = (qid: string, value: string) =>
-    setAnswers((a) => ({ ...a, [qid]: { kind: "FIB", value } }));
+
+  // FIB: set one blank at a time, keeping other blanks intact
+  const setFIBAt = (qid: string, index: number, value: string, blanksFallback = 1) =>
+    setAnswers((a) => {
+      const prev = (a[qid] as any)?.values ?? Array.from({ length: blanksFallback }, () => "");
+      const next = [...prev];
+      if (index >= next.length) {
+        // grow to fit
+        const growBy = index + 1 - next.length;
+        next.push(...Array.from({ length: growBy }, () => ""));
+      }
+      next[index] = value;
+      return { ...a, [qid]: { kind: "FIB", values: next } };
+    });
 
   const goPrev = () => setIdx((i) => Math.max(0, i - 1));
   const goNext = () => setIdx((i) => Math.min(questions.length - 1, i + 1));
 
-  /** evaluate correctness for one question */
+  /** evaluate correctness for one question (supports multi-blank FIB) */
   const isCorrect = (q: Question, a: Answers[keyof Answers] | undefined): boolean => {
     if (!a) return false;
     if (q.type === "MC") {
@@ -118,21 +164,22 @@ export default function QuizPreview() {
     if (q.type === "TF") {
       return (a as any).value === !!q.correctBoolean;
     }
-    // FIB
-    const user = (a as any).value ?? "";
-    const bank = q.acceptableAnswers ?? [];
-    const ci = q.caseInsensitive ?? true;
-    const trim = q.trimInput ?? true;
 
-    const norm = (s: string) => {
-      let t = s;
-      if (trim) t = t.trim();
-      if (ci) t = t.toLowerCase();
-      return t;
-    };
+    // FIB — compare per blank
+    const byBlank = acceptedByBlank(q); // string[] per blank
+    const norm = normWith(q);
+    const student: string[] = Array.isArray((a as any).values)
+      ? (a as any).values.map(String)
+      : [String((a as any).value ?? "")]; // tolerate older shape
 
-    const u = norm(user);
-    return bank.some((ans) => norm(ans) === u);
+    const blanks = Math.max(byBlank.length, student.length);
+    const ok = Array.from({ length: blanks }, (_, i) => {
+      const accepted = (byBlank[i] || []).map(norm);
+      const s = norm(student[i] ?? "");
+      if (!accepted.length) return false;
+      return accepted.includes(s);
+    });
+    return ok.every(Boolean);
   };
 
   const submit = () => {
@@ -162,23 +209,19 @@ export default function QuizPreview() {
       {/* Tabs to match editor/questions pages */}
       <Nav variant="tabs" className="mb-3">
         <Nav.Item>
-          <Nav.Link
-            as={Link}
-            to={`/Kambaz/Courses/${cid}/Quizzes/${qid}`}
-          >
+          <Nav.Link as={Link} to={`/Kambaz/Courses/${cid}/Quizzes/${qid}`}>
             Details
           </Nav.Link>
         </Nav.Item>
         <Nav.Item>
-          <Nav.Link
-            as={Link}
-            to={`/Kambaz/Courses/${cid}/Quizzes/${qid}/questions`}
-          >
+          <Nav.Link as={Link} to={`/Kambaz/Courses/${cid}/Quizzes/${qid}/questions`}>
             Questions
           </Nav.Link>
         </Nav.Item>
         <Nav.Item>
-          <Nav.Link as="span" className="active">Preview</Nav.Link>
+          <Nav.Link as="span" className="active">
+            Preview
+          </Nav.Link>
         </Nav.Item>
       </Nav>
 
@@ -218,9 +261,7 @@ export default function QuizPreview() {
                       label={c.text}
                       checked={picked}
                       onChange={() => setMC(current._id, c._id)}
-                      className={
-                        correct ? "text-success" : wrongPick ? "text-danger" : ""
-                      }
+                      className={correct ? "text-success" : wrongPick ? "text-danger" : ""}
                       disabled={submitted}
                     />
                   );
@@ -249,14 +290,25 @@ export default function QuizPreview() {
               </div>
             )}
 
-            {current.type === "FIB" && (
-              <Form.Control
-                placeholder="Your answer"
-                value={(answers[current._id] as any)?.value ?? ""}
-                onChange={(e) => setFIB(current._id, e.target.value)}
-                disabled={submitted}
-              />
-            )}
+            {current.type === "FIB" && (() => {
+              const blanks = Math.max(1, countBlanksInPrompt(current.prompt || current.title || ""));
+              const vals =
+                (answers[current._id] as any)?.values ??
+                Array.from({ length: blanks }, () => "");
+              return (
+                <div className="d-flex flex-column gap-2" style={{ maxWidth: 520 }}>
+                  {Array.from({ length: blanks }, (_, i) => (
+                    <Form.Control
+                      key={i}
+                      placeholder={`Blank ${i + 1}`}
+                      value={vals[i] ?? ""}
+                      onChange={(e) => setFIBAt(current._id, i, e.target.value, blanks)}
+                      disabled={submitted}
+                    />
+                  ))}
+                </div>
+              );
+            })()}
 
             {/* correctness after submit */}
             {submitted && (
@@ -269,15 +321,20 @@ export default function QuizPreview() {
                     {current.type === "TF" && (
                       <>
                         {" "}
-                        — correct answer:{" "}
-                        <b>{current.correctBoolean ? "True" : "False"}</b>
+                        — correct answer: <b>{current.correctBoolean ? "True" : "False"}</b>
                       </>
                     )}
                     {current.type === "FIB" && (
                       <>
                         {" "}
-                        — accepted answers:{" "}
-                        <b>{(current.acceptableAnswers ?? []).join(", ") || "—"}</b>
+                        — accepted:
+                        <div className="mt-1">
+                          {acceptedByBlank(current).map((acc, i) => (
+                            <div key={i}>
+                              Blank {i + 1}: <b>{acc.join(" | ") || "—"}</b>
+                            </div>
+                          ))}
+                        </div>
                       </>
                     )}
                   </span>
@@ -291,7 +348,12 @@ export default function QuizPreview() {
             <Button variant="light" className="border" onClick={goPrev} disabled={idx === 0}>
               Previous
             </Button>
-            <Button variant="light" className="border" onClick={goNext} disabled={idx >= questions.length - 1}>
+            <Button
+              variant="light"
+              className="border"
+              onClick={goNext}
+              disabled={idx >= questions.length - 1}
+            >
               Next
             </Button>
           </div>
@@ -326,11 +388,7 @@ export default function QuizPreview() {
         <ol className="mb-0">
           {questions.map((q, i) => (
             <li key={q._id}>
-              <Button
-                variant="link"
-                className="p-0"
-                onClick={() => setIdx(i)}
-              >
+              <Button variant="link" className="p-0" onClick={() => setIdx(i)}>
                 Question {i + 1}
               </Button>
             </li>
