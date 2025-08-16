@@ -353,7 +353,7 @@ export default function TakeQuiz() {
       )}
 
       <ol className="ps-3">
-        {visibleQuestions.map((q) => {
+        {visibleQuestions.map((q, idx) => {
           if (!q) return null;
           const ans = currentAnswers[q._id];
           const showCheck = resultMode;
@@ -371,10 +371,24 @@ export default function TakeQuiz() {
                     : "transparent",
                 }}
               >
-                {q.prompt && <div dangerouslySetInnerHTML={{ __html: q.prompt }} />}
+                {/* NEW: question header with title + points */}
+                <div className="d-flex justify-content-between align-items-center mb-2">
+                  <div className="fw-semibold">
+                    {q.title?.trim() ? q.title : `Question ${idx + 1}`}
+                  </div>
+                  <div className="text-secondary small">
+                    Points: <b>{Number(q.points) || 0}</b>
+                  </div>
+                </div>
 
+                {/* prompt */}
+                {q.prompt && (
+                  <div className="mb-2" dangerouslySetInnerHTML={{ __html: q.prompt }} />
+                )}
+
+                {/* type renderers */}
                 {q.type === "MC" && (
-                  <div className="mt-2 d-flex flex-column gap-2">
+                  <div className="mt-1 d-flex flex-column gap-2">
                     {getDisplayChoices(q).map((c) => (
                       <Form.Check
                         key={c._id}
@@ -390,7 +404,7 @@ export default function TakeQuiz() {
                 )}
 
                 {q.type === "TF" && (
-                  <div className="mt-2 d-flex gap-4">
+                  <div className="mt-1 d-flex gap-4">
                     <Form.Check
                       disabled={viewOnly || showCheck || isPreview}
                       type="radio"
@@ -416,7 +430,7 @@ export default function TakeQuiz() {
                     ? ans.map((s: any) => String(s ?? ""))
                     : Array.from({ length: blanks }, () => String(ans ?? ""));
                   return (
-                    <div className="mt-2 d-flex flex-column gap-2" style={{ maxWidth: 520 }}>
+                    <div className="mt-1 d-flex flex-column gap-2" style={{ maxWidth: 520 }}>
                       {Array.from({ length: blanks }, (_, i) => (
                         <Form.Control
                           key={i}
@@ -426,7 +440,7 @@ export default function TakeQuiz() {
                           onChange={(e) => {
                             const next = [...arr];
                             next[i] = e.target.value;
-                            setAns(q._id, next); // <-- store ARRAY per blank
+                            setAns(q._id, next); // store ARRAY per blank
                           }}
                         />
                       ))}
@@ -441,6 +455,7 @@ export default function TakeQuiz() {
                   );
                 })()}
 
+                {/* correctness label */}
                 {showCheck && (
                   <div className={`mt-2 small ${correct ? "text-success" : "text-danger"}`}>
                     {correct ? "Correct" : "Incorrect"}
