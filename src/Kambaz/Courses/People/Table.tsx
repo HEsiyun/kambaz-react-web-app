@@ -2,7 +2,7 @@ import { Table } from "react-bootstrap";
 import { FaUserCircle } from "react-icons/fa";
 import PeopleDetails from "./Details";
 import { Link } from "react-router-dom";
-import { useParams } from "react-router";
+import { useParams } from "react-router-dom";
 
 // Accepts users as a prop; defaults to empty array if not provided
 export default function PeopleTable({ users = [] }: { users?: any[] }) {
