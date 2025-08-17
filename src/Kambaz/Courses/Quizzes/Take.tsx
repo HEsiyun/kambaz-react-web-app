@@ -16,6 +16,7 @@ type QuizSettings = {
   timeLimitMin?: number; // 0/undefined = none
   lockAfterAnswering?: boolean;
   accessCode?: string;   // optional access code
+  showCorrectAfter?: "NEVER" | "IMMEDIATELY" | "AFTER_DUE"; // <-- added
 };
 
 type Quiz = {
@@ -25,6 +26,7 @@ type Quiz = {
   settings?: QuizSettings;
   published?: boolean;
   accessCode?: string;   // top-level support too
+  dueDate?: string;      // <-- added (used for AFTER_DUE)
 };
 
 type Choice = { _id: string; text: string; isCorrect?: boolean };
@@ -370,6 +372,19 @@ export default function TakeQuiz() {
     }
   };
 
+  /* ---------- NEW: compute reveal policy on the client ---------- */
+  const revealAnswersNow = useMemo(() => {
+    if (isPreview || isFaculty) return true;       // faculty & preview always see
+    if (!lastAttempt) return false;                // only after a submission
+    const when = quiz?.settings?.showCorrectAfter || "NEVER";
+    if (when === "IMMEDIATELY") return true;
+    if (when === "AFTER_DUE") {
+      const due = quiz?.dueDate ? new Date(quiz.dueDate).getTime() : NaN;
+      return Number.isFinite(due) && Date.now() >= due;
+    }
+    return false;
+  }, [isPreview, isFaculty, lastAttempt, quiz?.settings?.showCorrectAfter, quiz?.dueDate]);
+
   if (loading) {
     return (
       <div className="p-3 text-secondary">
@@ -544,27 +559,45 @@ export default function TakeQuiz() {
                         onChange={() => setAns(q._id, c._id)}
                       />
                     ))}
+
+                    {/* NEW: reveal correct choice text when policy allows */}
+                    {showCheck && revealAnswersNow && (
+                      <div className="small text-secondary mt-2">
+                        Correct answer:{" "}
+                        <b>{(q.choices || []).find((c) => c.isCorrect)?.text ?? "—"}</b>
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {q.type === "TF" && (
-                  <div className="mt-1 d-flex gap-4">
-                    <Form.Check
-                      disabled={viewOnly || showCheck || isPreview}
-                      type="radio"
-                      name={`q-${q._id}`}
-                      label="True"
-                      checked={ans === true}
-                      onChange={() => setAns(q._id, true)}
-                    />
-                    <Form.Check
-                      disabled={viewOnly || showCheck || isPreview}
-                      type="radio"
-                      name={`q-${q._id}`}
-                      label="False"
-                      checked={ans === false}
-                      onChange={() => setAns(q._id, false)}
-                    />
+                  <div className="mt-1 d-flex flex-column gap-2">
+                    <div className="d-flex gap-4">
+                      <Form.Check
+                        disabled={viewOnly || showCheck || isPreview}
+                        type="radio"
+                        name={`q-${q._id}`}
+                        label="True"
+                        checked={ans === true}
+                        onChange={() => setAns(q._id, true)}
+                      />
+                      <Form.Check
+                        disabled={viewOnly || showCheck || isPreview}
+                        type="radio"
+                        name={`q-${q._id}`}
+                        label="False"
+                        checked={ans === false}
+                        onChange={() => setAns(q._id, false)}
+                      />
+                    </div>
+
+                    {/* NEW: reveal correct TF when policy allows */}
+                    {showCheck && revealAnswersNow && (
+                      <div className="small text-secondary">
+                        Correct answer:{" "}
+                        <b>{((q as any).correctBoolean ?? (q as any).answer) ? "True" : "False"}</b>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -588,7 +621,8 @@ export default function TakeQuiz() {
                           }}
                         />
                       ))}
-                      {showCheck && (
+                      {/* Gate accepted-answers reveal the same way for consistency */}
+                      {showCheck && revealAnswersNow && (
                         <div className="small text-secondary mt-2">
                           {acceptedByBlank(q).map((acc, i) => (
                             <div key={i}>Blank {i + 1} accepted: {acc.join(" | ") || "—"}</div>
