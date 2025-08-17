@@ -8,7 +8,7 @@ import type { RootState } from "../../store";
 import { getMyLastAttempt, listMyAttempts } from "./attemptsClient";
 
 type QuizSettings = {
-  shuffleAnswers?: boolean;           // ← add this so we can display it
+  shuffleAnswers?: boolean;
   timeLimitMin?: number;
   multipleAttempts?: boolean;
   attemptsAllowed?: number;
@@ -60,6 +60,7 @@ export default function QuizDetails() {
   const [loading, setLoading] = useState(true);
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [points, setPoints] = useState<number>(0);
+  const [publishing, setPublishing] = useState(false);
 
   // student-facing attempt info
   const [lastAttempt, setLastAttempt] = useState<{ score: number; createdAt: string } | null>(null);
@@ -115,6 +116,18 @@ export default function QuizDetails() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qid, currentUser?._id, isFaculty]);
 
+  const publishNow = async () => {
+    if (!qid || !quiz || quiz.published) return;
+    try {
+      setPublishing(true);
+      await api.put(`/api/quizzes/${qid}`, { published: true });
+      // Navigate back to the course's quiz list
+      navigate(`/Kambaz/Courses/${cid}/Quizzes`);
+    } finally {
+      setPublishing(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="p-3 text-secondary">
@@ -143,6 +156,25 @@ export default function QuizDetails() {
       <div className="d-flex justify-content-end gap-2 mb-3">
         {isFaculty ? (
           <>
+            {/* NEW: Publish control */}
+            <Button
+              variant={quiz.published ? "secondary" : "danger"}
+              disabled={quiz.published || publishing}
+              onClick={publishNow}
+              title={quiz.published ? "This quiz is already published" : "Publish this quiz"}
+            >
+              {publishing ? (
+                <>
+                  <Spinner as="span" animation="border" size="sm" className="me-2" />
+                  Publishing…
+                </>
+              ) : quiz.published ? (
+                "Published"
+              ) : (
+                "Publish"
+              )}
+            </Button>
+
             <Button
               variant="light"
               className="border"
