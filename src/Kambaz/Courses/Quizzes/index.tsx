@@ -71,11 +71,17 @@ export default function Quizzes() {
     if (cid) dispatch(quizThunks.fetchQuizzes(cid));
   }, [cid, dispatch]);
 
-  // Load extra per-quiz bits (points, question count, last score)
-  useEffect(() => {
-    if (!list.length) return;
+  // 🔒 Students should only see published quizzes
+  const visibleList = useMemo(
+    () => (isFaculty ? list : list.filter((q) => q.published === true)),
+    [list, isFaculty]
+  );
 
-    list.forEach(async (q) => {
+  // Load extra per-quiz bits (points, question count, last score) — only for *visible* quizzes
+  useEffect(() => {
+    if (!visibleList.length) return;
+
+    visibleList.forEach(async (q) => {
       // points
       if (pointsByQuiz[q._id] == null) {
         try {
@@ -99,7 +105,7 @@ export default function Quizzes() {
         } catch {}
       }
 
-      // last score (optional endpoint)
+      // last score (optional endpoint) — students only
       if (!isFaculty && scoreByQuiz[q._id] == null) {
         try {
           const { data } = await api.get<{ score: number }>(
@@ -113,10 +119,36 @@ export default function Quizzes() {
         }
       }
     });
-  }, [list, api, isFaculty, pointsByQuiz, countByQuiz, scoreByQuiz]);
+  }, [visibleList, api, isFaculty, pointsByQuiz, countByQuiz, scoreByQuiz]);
 
-  // --- Create & immediately navigate to Details editor ---
-  const [creating, setCreating] = useState(false);
+  // ---- SORT BY "Available until" (ascending). Items without it go last. ----
+  const sortedList = useMemo(() => {
+    const keyUntil = (q: Quiz) =>
+      q.availableUntil
+        ? new Date(q.availableUntil).getTime()
+        : Number.POSITIVE_INFINITY;
+    const keyFrom = (q: Quiz) =>
+      q.availableFrom
+        ? new Date(q.availableFrom).getTime()
+        : Number.POSITIVE_INFINITY;
+
+    return [...visibleList].sort((a, b) => {
+      const ua = keyUntil(a);
+      const ub = keyUntil(b);
+      if (ua !== ub) return ua - ub; // earlier "until" first
+
+      // tie-breaker: earlier "from" first
+      const fa = keyFrom(a);
+      const fb = keyFrom(b);
+      if (fa !== fb) return fa - fb;
+
+      // final tie-breaker: title
+      const at = (a.title ?? "").toLowerCase();
+      const bt = (b.title ?? "").toLowerCase();
+      return at.localeCompare(bt);
+    });
+  }, [visibleList]);
+
   const add = async () => {
     if (!cid || creating) return;
     try {
@@ -135,6 +167,7 @@ export default function Quizzes() {
       setCreating(false);
     }
   };
+  const [creating, setCreating] = useState(false);
 
   const goEdit = (q: Quiz) =>
     navigate(`/Kambaz/Courses/${q.course}/Quizzes/${q._id}/edit`);
@@ -145,30 +178,6 @@ export default function Quizzes() {
     dispatch(
       quizThunks.publishQuizThunk({ qid: q._id, published: !q.published })
     );
-
-  // ---- SORT BY "Available until" (ascending). Items without it go last. ----
-  const sortedList = useMemo(() => {
-    const keyUntil = (q: Quiz) =>
-      q.availableUntil ? new Date(q.availableUntil).getTime() : Number.POSITIVE_INFINITY;
-    const keyFrom = (q: Quiz) =>
-      q.availableFrom ? new Date(q.availableFrom).getTime() : Number.POSITIVE_INFINITY;
-
-    return [...list].sort((a, b) => {
-      const ua = keyUntil(a);
-      const ub = keyUntil(b);
-      if (ua !== ub) return ua - ub; // earlier "until" first
-
-      // tie-breaker: earlier "from" first
-      const fa = keyFrom(a);
-      const fb = keyFrom(b);
-      if (fa !== fb) return fa - fb;
-
-      // final tie-breaker: title
-      const at = (a.title ?? "").toLowerCase();
-      const bt = (b.title ?? "").toLowerCase();
-      return at.localeCompare(bt);
-    });
-  }, [list]);
 
   return (
     <div className="p-3">
@@ -198,7 +207,7 @@ export default function Quizzes() {
 
       {!loading && sortedList.length === 0 && (
         <div className="text-secondary">
-          No quizzes yet. {isFaculty && "Click + Quiz to create one."}
+          {isFaculty ? "No quizzes yet. Click + Quiz to create one." : "No published quizzes yet."}
         </div>
       )}
 
@@ -206,16 +215,14 @@ export default function Quizzes() {
         {sortedList.map((q) => {
           const avail = availabilityLabel(q);
           // Show Available until instead of due date
-          const until = q.availableUntil ? `Available until: ${fmt(q.availableUntil)}` : undefined;
+          const until = q.availableUntil
+            ? `Available until: ${fmt(q.availableUntil)}`
+            : undefined;
 
           const pts =
-            pointsByQuiz[q._id] != null
-              ? `${pointsByQuiz[q._id]} pts`
-              : undefined;
+            pointsByQuiz[q._id] != null ? `${pointsByQuiz[q._id]} pts` : undefined;
           const qs =
-            countByQuiz[q._id] != null
-              ? `${countByQuiz[q._id]} Questions`
-              : undefined;
+            countByQuiz[q._id] != null ? `${countByQuiz[q._id]} Questions` : undefined;
           const lastScore =
             !isFaculty && scoreByQuiz[q._id] != null
               ? `Score: ${scoreByQuiz[q._id]}`
@@ -257,9 +264,7 @@ export default function Quizzes() {
                   <OverlayTrigger
                     placement="top"
                     overlay={
-                      <Tooltip>
-                        {q.published ? "Published" : "Unpublished"}
-                      </Tooltip>
+                      <Tooltip>{q.published ? "Published" : "Unpublished"}</Tooltip>
                     }
                   >
                     <span className="me-2 mt-1">
@@ -282,9 +287,7 @@ export default function Quizzes() {
                       <BsThreeDotsVertical />
                     </Dropdown.Toggle>
                     <Dropdown.Menu>
-                      <Dropdown.Item onClick={() => goEdit(q)}>
-                        Edit
-                      </Dropdown.Item>
+                      <Dropdown.Item onClick={() => goEdit(q)}>Edit</Dropdown.Item>
                       <Dropdown.Item onClick={() => togglePublish(q)}>
                         {q.published ? "Unpublish" : "Publish"}
                       </Dropdown.Item>

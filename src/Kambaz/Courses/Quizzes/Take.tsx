@@ -15,7 +15,7 @@ type QuizSettings = {
   oneQuestionAtATime?: boolean;
   timeLimitMin?: number; // 0/undefined = none
   lockAfterAnswering?: boolean;
-  accessCode?: string;   // ← NEW: optional access code on settings
+  accessCode?: string;   // optional access code
 };
 
 type Quiz = {
@@ -24,7 +24,7 @@ type Quiz = {
   title: string;
   settings?: QuizSettings;
   published?: boolean;
-  accessCode?: string;   // ← also support top-level (either is fine)
+  accessCode?: string;   // top-level support too
 };
 
 type Choice = { _id: string; text: string; isCorrect?: boolean };
@@ -58,7 +58,6 @@ const fmt = (d: string) =>
     minute: "2-digit",
   });
 
-// shuffle
 function shuffle<T>(arr: T[]) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -111,6 +110,7 @@ export default function TakeQuiz() {
   const currentUser = useSelector(
     (s: RootState) => s.accountReducer.currentUser as { _id?: string; role?: string } | null
   );
+  const isFaculty = currentUser?.role === "FACULTY";
 
   const [loading, setLoading] = useState(true);
   const [quiz, setQuiz] = useState<Quiz | null>(null);
@@ -160,7 +160,7 @@ export default function TakeQuiz() {
         setQuiz(qz);
         setQuestions(qs);
 
-        // Access gate: in preview always bypass; otherwise wait for code entry
+        // Access gate: in preview bypass; otherwise wait for code entry if present
         setAccessOk(isPreview || !(qz?.settings?.accessCode || qz?.accessCode));
 
         if (!isPreview) {
@@ -309,7 +309,6 @@ export default function TakeQuiz() {
   const hasAnyAnswer = (q: Question, val: any): boolean => {
     if (q.type === "MC") return !!val;
     if (q.type === "TF") return typeof val === "boolean";
-    // FIB: array or string
     if (Array.isArray(val)) return val.some((s) => String(s ?? "").trim().length > 0);
     return String(val ?? "").trim().length > 0;
   };
@@ -381,8 +380,26 @@ export default function TakeQuiz() {
   }
   if (!quiz) return <div className="p-3 text-danger">Quiz not found.</div>;
 
+  /* ===== NEW: block students from unpublished quizzes ===== */
+  if (!isPreview && !isFaculty && quiz.published === false) {
+    return (
+      <div className="p-3" style={{ maxWidth: 640 }}>
+        <h4 className="mb-3">{quiz.title}</h4>
+        <Alert variant="warning" className="border">
+          This quiz isn’t published yet. Please check back later or contact your instructor.
+        </Alert>
+        <Link
+          to={`/Kambaz/Courses/${cid}/Quizzes`}
+          className="btn btn-light border"
+        >
+          Back to Quizzes
+        </Link>
+      </div>
+    );
+  }
+
   // ===== If access code is required and not verified yet, show gate =====
-  if (requiresAccess && !accessOk) {
+  if (!isPreview && !isFaculty && (quiz.settings?.accessCode || quiz.accessCode) && !accessOk) {
     return (
       <div className="p-3" style={{ maxWidth: 640 }}>
         <h4 className="mb-3">{quiz.title}</h4>
