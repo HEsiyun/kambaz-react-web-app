@@ -15,6 +15,7 @@ type QuizSettings = {
   oneQuestionAtATime?: boolean;
   timeLimitMin?: number; // 0/undefined = none
   lockAfterAnswering?: boolean;
+  accessCode?: string;   // ← NEW: optional access code on settings
 };
 
 type Quiz = {
@@ -23,6 +24,7 @@ type Quiz = {
   title: string;
   settings?: QuizSettings;
   published?: boolean;
+  accessCode?: string;   // ← also support top-level (either is fine)
 };
 
 type Choice = { _id: string; text: string; isCorrect?: boolean };
@@ -133,10 +135,16 @@ export default function TakeQuiz() {
   const [remainingMs, setRemainingMs] = useState<number>(0);
   const [expired, setExpired] = useState(false);
 
-  // NEW: lock-after-answering state
-  // highest index that has been answered and then advanced past
+  // lock-after-answering state
   const [lockedMaxIndex, setLockedMaxIndex] = useState<number>(-1);
   const [lockNotice, setLockNotice] = useState<string | null>(null);
+
+  // ===== Access code gate =====
+  const [accessOk, setAccessOk] = useState<boolean>(false);
+  const [codeInput, setCodeInput] = useState<string>("");
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const expectedCode = (quiz?.settings?.accessCode || quiz?.accessCode || "").trim();
+  const requiresAccess = !isPreview && expectedCode.length > 0;
 
   // Load quiz + questions + attempts (not in preview)
   useEffect(() => {
@@ -151,6 +159,9 @@ export default function TakeQuiz() {
         if (!alive) return;
         setQuiz(qz);
         setQuestions(qs);
+
+        // Access gate: in preview always bypass; otherwise wait for code entry
+        setAccessOk(isPreview || !(qz?.settings?.accessCode || qz?.accessCode));
 
         if (!isPreview) {
           const [last, allMine] = await Promise.all([
@@ -172,6 +183,8 @@ export default function TakeQuiz() {
         setShuffleEpoch((e) => e + 1);
         setLockedMaxIndex(-1);
         setLockNotice(null);
+        setCodeInput("");
+        setCodeError(null);
 
         // timer
         const tl = Number(qz?.settings?.timeLimitMin || 0);
@@ -316,7 +329,6 @@ export default function TakeQuiz() {
     if (!oneAtATime) return;
     const q = questions[currentIndex];
     const ans = currentAnswers[q?._id || ""];
-    // If lock setting is on and the current has an answer, mark it locked
     if (lockAfter && q && hasAnyAnswer(q, ans)) {
       setLockedMaxIndex((idx) => Math.max(idx, currentIndex));
     }
@@ -344,6 +356,21 @@ export default function TakeQuiz() {
     }
   };
 
+  // ===== Access code check handler =====
+  const verifyAccess = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!requiresAccess) {
+      setAccessOk(true);
+      return;
+    }
+    if (codeInput.trim() === expectedCode) {
+      setAccessOk(true);
+      setCodeError(null);
+    } else {
+      setCodeError("Incorrect access code. Please try again.");
+    }
+  };
+
   if (loading) {
     return (
       <div className="p-3 text-secondary">
@@ -353,6 +380,54 @@ export default function TakeQuiz() {
     );
   }
   if (!quiz) return <div className="p-3 text-danger">Quiz not found.</div>;
+
+  // ===== If access code is required and not verified yet, show gate =====
+  if (requiresAccess && !accessOk) {
+    return (
+      <div className="p-3" style={{ maxWidth: 640 }}>
+        <h4 className="mb-3">{quiz.title}</h4>
+        <Alert variant="light" className="border">
+          <div className="fw-semibold mb-1">This quiz requires an access code.</div>
+          <div className="text-secondary small">
+            Enter the access code provided by your instructor to begin.
+          </div>
+        </Alert>
+        {codeError && (
+          <Alert variant="danger" className="py-2">
+            {codeError}
+          </Alert>
+        )}
+        <Form onSubmit={verifyAccess}>
+          <Form.Group className="mb-3" controlId="quiz-access-code">
+            <Form.Label>Access Code</Form.Label>
+            <Form.Control
+              type="password"
+              autoFocus
+              value={codeInput}
+              onChange={(e) => setCodeInput(e.target.value)}
+              placeholder="Enter access code"
+            />
+          </Form.Group>
+          <div className="d-flex justify-content-end gap-2">
+            <Link
+              to={`/Kambaz/Courses/${cid}/Quizzes/${qid}`}
+              className="btn btn-light border"
+            >
+              Back to Quiz
+            </Link>
+            <Button
+              variant="danger"
+              type="submit"
+              disabled={codeInput.trim().length === 0}
+              onClick={() => verifyAccess()}
+            >
+              Start Quiz
+            </Button>
+          </div>
+        </Form>
+      </div>
+    );
+  }
 
   const resultMode = !isPreview && !!lastAttempt;
   const visibleQuestions = oneAtATime && !resultMode ? [questions[currentIndex]] : questions;
