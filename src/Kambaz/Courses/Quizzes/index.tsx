@@ -32,9 +32,6 @@ function availabilityLabel(q: Quiz, now = new Date()) {
 
   if (from && now < from) return `Not available until ${fmt(q.availableFrom)}`;
   if (until && now > until) return "Closed";
-  if ((from && now >= from) || (!from && (!until || now <= until))) {
-    return "Available";
-  }
   return "Available";
 }
 
@@ -149,15 +146,24 @@ export default function Quizzes() {
       quizThunks.publishQuizThunk({ qid: q._id, published: !q.published })
     );
 
-  // ---- SORT BY "Available from" (ascending). Items without a date go last. ----
+  // ---- SORT BY "Available until" (ascending). Items without it go last. ----
   const sortedList = useMemo(() => {
-    const toKey = (q: Quiz) =>
+    const keyUntil = (q: Quiz) =>
+      q.availableUntil ? new Date(q.availableUntil).getTime() : Number.POSITIVE_INFINITY;
+    const keyFrom = (q: Quiz) =>
       q.availableFrom ? new Date(q.availableFrom).getTime() : Number.POSITIVE_INFINITY;
+
     return [...list].sort((a, b) => {
-      const da = toKey(a);
-      const db = toKey(b);
-      if (da !== db) return da - db; // earlier first
-      // tie-breaker for consistent order
+      const ua = keyUntil(a);
+      const ub = keyUntil(b);
+      if (ua !== ub) return ua - ub; // earlier "until" first
+
+      // tie-breaker: earlier "from" first
+      const fa = keyFrom(a);
+      const fb = keyFrom(b);
+      if (fa !== fb) return fa - fb;
+
+      // final tie-breaker: title
       const at = (a.title ?? "").toLowerCase();
       const bt = (b.title ?? "").toLowerCase();
       return at.localeCompare(bt);
@@ -199,7 +205,9 @@ export default function Quizzes() {
       <ul className="list-group">
         {sortedList.map((q) => {
           const avail = availabilityLabel(q);
-          const due = q.dueDate ? `Due: ${fmt(q.dueDate)}` : null;
+          // Show Available until instead of due date
+          const until = q.availableUntil ? `Available until: ${fmt(q.availableUntil)}` : undefined;
+
           const pts =
             pointsByQuiz[q._id] != null
               ? `${pointsByQuiz[q._id]} pts`
@@ -213,7 +221,7 @@ export default function Quizzes() {
               ? `Score: ${scoreByQuiz[q._id]}`
               : undefined;
 
-          const bits = [avail, due, pts, qs, lastScore].filter(Boolean);
+          const bits = [avail, until, pts, qs, lastScore].filter(Boolean);
 
           return (
             <li
