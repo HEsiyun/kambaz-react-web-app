@@ -182,10 +182,12 @@ export default function QuestionsTab() {
     }
   };
 
-  /** Keep local draft in sync while editing */
-  const handleDraftChange = (draft: Question | null, id: string) => {
-    if (!isTemp(id) || !draft) return;
-    setDrafts((ds) => ds.map((d) => (d._id === id ? { ...d, ...draft } : d)));
+  /**
+   * IMPORTANT: Do NOT live-sync edits from QuestionCard into parent state.
+   * This keeps Cancel truly discarding changes.
+   */
+  const handleDraftChange = (_draft: Question | null, _id: string) => {
+    // no-op on purpose
   };
 
   const rows: Question[] = [...drafts, ...(serverQuestions || [])];
