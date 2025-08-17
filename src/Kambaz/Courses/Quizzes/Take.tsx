@@ -16,7 +16,7 @@ type QuizSettings = {
   timeLimitMin?: number; // 0/undefined = none
   lockAfterAnswering?: boolean;
   accessCode?: string;   // optional access code
-  showCorrectAfter?: "NEVER" | "IMMEDIATELY" | "AFTER_DUE"; // <-- added
+  showCorrectAfter?: "NEVER" | "IMMEDIATELY" | "AFTER_DUE";
 };
 
 type Quiz = {
@@ -26,7 +26,7 @@ type Quiz = {
   settings?: QuizSettings;
   published?: boolean;
   accessCode?: string;   // top-level support too
-  dueDate?: string;      // <-- added (used for AFTER_DUE)
+  dueDate?: string;      // used for AFTER_DUE policy
 };
 
 type Choice = { _id: string; text: string; isCorrect?: boolean };
@@ -134,6 +134,7 @@ export default function TakeQuiz() {
 
   // Timer
   const endAtRef = useRef<number | null>(null);
+  const [endAtTs, setEndAtTs] = useState<number | null>(null); // state mirror for effects
   const [remainingMs, setRemainingMs] = useState<number>(0);
   const [expired, setExpired] = useState(false);
 
@@ -188,17 +189,19 @@ export default function TakeQuiz() {
         setCodeInput("");
         setCodeError(null);
 
-        // timer
+        // timer (initialize here if no access gate or in preview bypass)
         const tl = Number(qz?.settings?.timeLimitMin || 0);
         const hasTL = !isPreview && tl > 0;
         if (hasTL) {
           endAtRef.current = Date.now() + tl * 60_000;
           setRemainingMs((endAtRef.current as number) - Date.now());
           setExpired(false);
+          setEndAtTs(endAtRef.current);
         } else {
           endAtRef.current = null;
           setRemainingMs(0);
           setExpired(false);
+          setEndAtTs(null);
         }
       } catch {
         if (alive) setQuiz(null);
@@ -211,12 +214,30 @@ export default function TakeQuiz() {
     };
   }, [qid, currentUser?._id, isPreview]);
 
+  // Re-start timer once the student passes the access code gate (first attempt case)
+  useEffect(() => {
+    if (isPreview) return;
+    if (!quiz) return;
+    if (!accessOk) return;      // wait until access granted
+    if (lastAttempt) return;    // don't start in review mode
+    const tl = Number(quiz.settings?.timeLimitMin || 0);
+    if (tl <= 0) return;
+    if (!endAtRef.current) {
+      endAtRef.current = Date.now() + tl * 60_000;
+      setRemainingMs((endAtRef.current as number) - Date.now());
+      setExpired(false);
+      setEndAtTs(endAtRef.current);
+    }
+  }, [isPreview, quiz, accessOk, lastAttempt]);
+
   // Countdown
   useEffect(() => {
     if (isPreview) return;
     if (!quiz?.settings?.timeLimitMin) return;
+    if (!accessOk) return;
     if (lastAttempt) return;
-    if (!endAtRef.current) return;
+    if (!endAtTs) return;
+
     const tick = () => {
       const ms = (endAtRef.current as number) - Date.now();
       setRemainingMs(ms);
@@ -225,7 +246,13 @@ export default function TakeQuiz() {
     tick();
     const id = setInterval(tick, 500);
     return () => clearInterval(id);
-  }, [quiz?.settings?.timeLimitMin, lastAttempt, isPreview]);
+  }, [
+    isPreview,
+    accessOk,
+    lastAttempt,
+    quiz?.settings?.timeLimitMin,
+    endAtTs,
+  ]);
 
   // Auto-submit if expired
   useEffect(() => {
@@ -372,7 +399,7 @@ export default function TakeQuiz() {
     }
   };
 
-  /* ---------- NEW: compute reveal policy on the client ---------- */
+  /* ---------- Reveal policy (answers visibility) ---------- */
   const revealAnswersNow = useMemo(() => {
     if (isPreview || isFaculty) return true;       // faculty & preview always see
     if (!lastAttempt) return false;                // only after a submission
@@ -395,7 +422,7 @@ export default function TakeQuiz() {
   }
   if (!quiz) return <div className="p-3 text-danger">Quiz not found.</div>;
 
-  /* ===== NEW: block students from unpublished quizzes ===== */
+  /* ===== Block students from unpublished quizzes ===== */
   if (!isPreview && !isFaculty && quiz.published === false) {
     return (
       <div className="p-3" style={{ maxWidth: 640 }}>
@@ -413,7 +440,7 @@ export default function TakeQuiz() {
     );
   }
 
-  // ===== If access code is required and not verified yet, show gate =====
+  // ===== Access code gate =====
   if (!isPreview && !isFaculty && (quiz.settings?.accessCode || quiz.accessCode) && !accessOk) {
     return (
       <div className="p-3" style={{ maxWidth: 640 }}>
@@ -464,7 +491,8 @@ export default function TakeQuiz() {
   const resultMode = !isPreview && !!lastAttempt;
   const visibleQuestions = oneAtATime && !resultMode ? [questions[currentIndex]] : questions;
 
-  const hasTimeLimit = !isPreview && !resultMode && (quiz.settings?.timeLimitMin || 0) > 0;
+  const hasTimeLimit =
+    !isPreview && !resultMode && (quiz.settings?.timeLimitMin || 0) > 0;
 
   return (
     <div className="p-3" style={{ maxWidth: 900 }}>
@@ -473,7 +501,7 @@ export default function TakeQuiz() {
           {quiz.title}
           {isPreview && <span className="text-secondary ms-2 small">(Preview)</span>}
         </h4>
-        {hasTimeLimit && endAtRef.current && (
+        {hasTimeLimit && endAtTs && (
           <div
             className={`px-3 py-2 rounded border ${
               remainingMs <= 60_000 ? "border-danger text-danger" : "border-secondary text-secondary"
@@ -560,7 +588,7 @@ export default function TakeQuiz() {
                       />
                     ))}
 
-                    {/* NEW: reveal correct choice text when policy allows */}
+                    {/* reveal correct choice when policy allows */}
                     {showCheck && revealAnswersNow && (
                       <div className="small text-secondary mt-2">
                         Correct answer:{" "}
@@ -591,7 +619,7 @@ export default function TakeQuiz() {
                       />
                     </div>
 
-                    {/* NEW: reveal correct TF when policy allows */}
+                    {/* reveal correct TF when policy allows */}
                     {showCheck && revealAnswersNow && (
                       <div className="small text-secondary">
                         Correct answer:{" "}
@@ -693,10 +721,12 @@ export default function TakeQuiz() {
                     endAtRef.current = Date.now() + tl * 60_000;
                     setRemainingMs((endAtRef.current as number) - Date.now());
                     setExpired(false);
+                    setEndAtTs(endAtRef.current);
                   } else {
                     endAtRef.current = null;
                     setRemainingMs(0);
                     setExpired(false);
+                    setEndAtTs(null);
                   }
                   window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
